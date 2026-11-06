@@ -1,0 +1,330 @@
+// Model (M1) of the Rail Transportation System: resulting structure of Delivery 2
+// (section 7: 6 components added and 10 modified; 15 internal connectors and SoS-K34 added).
+// Boundary components and global connectors are written as they appear in sos.arch.
+// Latencies and periods in ms. A modification of behaviour that no property expresses is
+// marked with a comment (Delivery 2, section 7.2).
+system Rail
+
+constituent CPS "Sistema de Gestión de Puertos del Caribe" owner "Operadores portuarios de la costa Caribe"
+constituent PPS "Sistema de Gestión de Puertos del Pacífico" owner "Operadores portuarios de la costa Pacífica"
+constituent RTS "Sistema de Transporte Carretero" owner "Empresas transportadoras y operadores de flotas"
+constituent RLS "Sistema de Transporte Férreo" owner "Concesionarios férreos"
+constituent FTS "Sistema de Transporte Fluvial" owner "Operadores de navegación fluvial"
+constituent NCS "Sistema de Coordinación Nacional" owner "Autoridad nacional (transporte, aduanas y control)"
+
+// Boundary components of the other constituents (as in sos.arch)
+component CGW "Caribbean Port Gateway" in CPS tier T2 kind software latency 300000
+component PGW "Pacific Port Gateway" in PPS tier T2 kind software
+component RGW "Road Gateway" in RTS tier T2 kind software latency 200000
+component FGW "Fluvial Gateway" in FTS tier T2 kind software
+component NCG "National Coordination Gateway" in NCS tier T2 kind software latency 230000
+
+// T1 — Presentation
+component CCF "Consola del CCF" in RLS tier T1 kind software
+component DMI "Interfaz del maquinista (DMI)" in RLS tier T1 kind hardware_software
+component CTF "Consola de terminal férrea" in RLS tier T1 kind software
+
+// T2 — Communication
+// Modified (F-QS1, F-QS7): receives SoS-K34 (F-K29); waits up to 2 s on SoS-K18a; calls the
+// three services of C4 in parallel. No property: it is written as in sos.arch
+component LGW "Rail Gateway" in RLS tier T2 kind software
+// Modified (F-QS6, F-QS1): accepts v1 and v2 of the canonical model
+component TRAD "Traductor canónico" in RLS tier T2 kind software translator latency 60
+// Modified (F-QS3): the critical channel reserves 50 events/s for custody and access readings (11 events/s)
+component BRK "Broker de eventos férreos" in RLS tier T2 kind software capacity 50 load 11
+// Modified (F-QS4): authenticated and encrypted channel (+20 ms on F-K13a/b)
+component RAD "Radio tren–tierra" in RLS tier T2 kind hardware availability 99.90
+component RADB "Radio tren–tierra B" in RLS tier T2 kind hardware availability 99.90
+// Modified (F-QS2): full state every 0.4 s with a timestamp (F-K11)
+component CON "Concentrador de equipos de campo" in RLS tier T2 kind hardware_software availability 99.90
+
+// T3 — Logic
+// Modified (F-QS1): cut-off rule, dispatches on time with the available composition
+component PLN "Servicio de planificación y despacho" in RLS tier T3 kind software
+// Modified (F-QS4, F-QS5): authenticates, drops duplicates by report id, logs rejected
+// attempts, sends liveness and state to SAM-B
+component SAM "Servicio de autoridad de movimiento (SAM)" in RLS tier T3 kind software availability 99.95 latency 120
+// F-K13a/b, F-K34a/b and F-K18 end or start in the active SAM: the primary or, after the
+// takeover, SAM-B (Delivery 2, section 7.3). SAM stands for the active SAM in those connectors.
+component SAMB "SAM de respaldo (SAM-B)" in RLS tier T3 kind software availability 99.95
+// Modified (F-QS2): keeps the age of the state; after 3 lost digests treats the sections as
+// occupied and reports it through F-K6
+component ILK "Enclavamiento" in RLS tier T3 kind hardware_software availability 99.99 latency 300
+component TRN "trenes-ms" in RLS tier T3 kind software latency 50
+component CRG "carga-ms" in RLS tier T3 kind software
+component POS "posicion-ms" in RLS tier T3 kind software latency 50
+// Modified (F-QS7): reads the precalculated capacity from the cache (40 requests/s, A7)
+component RSV "reservas-ms" in RLS tier T3 kind software capacity 40 load 8
+// Added (F-QS1): its 300 s budget of SoS-QS1 (M4) is written as a budget in the analysis
+component ARR "arribos-ms" in RLS tier T3 kind software
+
+// T4 — Data
+component TRNDB "trenes-db" in RLS tier T4 kind software
+component CRGDB "carga-db" in RLS tier T4 kind software
+component POSDB "posicion-db" in RLS tier T4 kind software
+component RSVDB "reservas-db" in RLS tier T4 kind software
+component JRU "Registrador jurídico de a bordo (JRU)" in RLS tier T4 kind hardware_software
+component HIST "Repositorio histórico operacional" in RLS tier T4 kind software
+component ARRDB "arribos-db" in RLS tier T4 kind software
+component CACHE "Caché de capacidad" in RLS tier T4 kind software
+
+// T5 — Physical
+// Modified (F-QS4, F-QS5): sends each report by both paths, authenticates, compares sensors
+component OBU "Unidad a bordo" in RLS tier T5 kind hardware availability 99.99 latency 80
+component SEN "Sensores de la locomotora" in RLS tier T5 kind physical availability 99.95
+component SENB "Sensores de la locomotora B" in RLS tier T5 kind physical availability 99.95
+component BA "Actuador de freno" in RLS tier T5 kind physical
+component APV "Aparatos de vía (agujas y señales)" in RLS tier T5 kind physical
+component DET "Detectores de vía" in RLS tier T5 kind physical
+component LID "Lector de identificación de vagones" in RLS tier T5 kind hardware
+
+// Internal connectors
+connector F_K1 nature dependency coupling blocking
+  carries "Órdenes de planificación y despacho, y consultas de estado"
+  : CCF -> PLN
+connector F_K2 nature dependency coupling blocking
+  carries "Registro de cargue, descargue y composición, y consultas de reservas"
+  : CTF -> CRG, CTF -> TRN, CTF -> RSV
+connector F_K3 nature dependency coupling blocking
+  carries "Reserva de capacidad de corredor y terminal para el surco planificado"
+  : PLN -> RSV
+connector F_K4 nature dependency coupling blocking
+  carries "Composición y disponibilidad de locomotoras y vagones"
+  : PLN -> TRN
+connector F_K5 nature control_command coupling blocking
+  carries "Solicitudes de ruta para el tren que se despacha"
+  : PLN -> ILK
+connector F_K6 nature event_notification coupling supply
+  carries "Resultado de las solicitudes de ruta, ocupación y alarma de secciones en falla segura"
+  : ILK -> PLN
+connector F_K7 nature event_notification coupling supply
+  carries "Estado de rutas, agujas y señales cuando cambian"
+  : ILK -> SAM
+connector F_K8 nature control_command coupling sink
+  carries "Órdenes de posición de agujas y de aspecto de señales"
+  : ILK -> APV
+connector F_K9 nature data_flow coupling supply
+  carries "Paso de trenes y ocupación de secciones, en el formato de cada fabricante"
+  : DET -> CON
+connector F_K10 nature data_flow coupling supply
+  carries "Identificación de vagones y contenedores al entrar y salir de la terminal"
+  : LID -> CON
+connector F_K11 nature data_flow coupling supply
+  carries "Resumen del estado cada 0,4 s con marca de tiempo, además de los cambios"
+  latency 1200 period 400
+  : CON -> ILK
+connector F_K12 nature event_notification coupling sink
+  carries "Paso de trenes; las lecturas de acceso van al canal crítico"
+  : CON -> BRK
+connector F_K13a nature data_flow coupling supply
+  carries "Reportes de posición del tren, autenticados y cifrados"
+  latency 250 period 5000
+  : OBU -> RAD -> SAM
+connector F_K13b nature control_command coupling supply
+  carries "Autoridades de movimiento, autenticadas y cifradas"
+  latency 250 period 5000
+  : SAM -> RAD -> OBU
+connector F_K14 nature data_flow coupling supply
+  carries "Velocidad, distancia recorrida y condiciones físicas del tren"
+  : SEN -> OBU
+connector F_K15 nature control_command coupling sink
+  carries "Órdenes de frenado"
+  : OBU -> BA
+connector F_K16 nature data_flow coupling supply
+  carries "Velocidad permitida, límite de la autoridad e instrucciones a mostrar"
+  : OBU -> DMI
+connector F_K17 nature data_flow coupling sink
+  carries "Datos de a bordo a registrar"
+  : OBU -> JRU
+connector F_K18 nature event_notification coupling sink
+  carries "Posición de los trenes y autoridades otorgadas"
+  : SAM -> BRK
+connector F_K19 nature event_notification coupling sink
+  carries "Custodia y composición despachada, por el canal crítico"
+  latency 25
+  : PLN -> BRK, CRG -> BRK
+connector F_K20 nature event_notification coupling supply
+  carries "Posiciones, llegadas y salidas"
+  : BRK -> POS
+connector F_K26 nature event_notification coupling supply
+  carries "Cargue, descargue y transferencias de custodia (CR1)"
+  : BRK -> CRG
+connector F_K27 nature event_notification coupling sink
+  carries "Eventos operacionales para el histórico (CR1)"
+  : BRK -> HIST
+connector F_K21 nature event_notification coupling sink
+  carries "Custodia y composición (canal crítico), posición y eventos de vía, en el modelo canónico"
+  : BRK -> TRAD -> LGW
+connector F_K22 nature dependency coupling blocking
+  carries "Lecturas y escrituras de los datos de cada servicio"
+  : TRN -> TRNDB, CRG -> CRGDB, POS -> POSDB, RSV -> RSVDB
+connector F_K23a nature dependency coupling blocking
+  carries "Solicitudes de capacidad, en paralelo, timeout de 300 ms y un reintento"
+  : LGW -> TRAD -> RSV, LGW -> TRAD -> TRN, LGW -> TRAD -> POS
+connector F_K23b nature data_flow coupling blocking
+  carries "Capacidad, plataforma, ventana y arribo previsto; rechazo explícito si vence el reintento"
+  : RSV -> TRAD -> LGW, TRN -> TRAD -> LGW, POS -> TRAD -> LGW
+connector F_K24a nature dependency coupling blocking
+  carries "Avisos de convoy de exportación y solicitudes de camiones (SoS-K22a, SoS-K23a, SoS-K25a)"
+  : PLN -> TRAD -> LGW
+connector F_K24b nature data_flow coupling blocking
+  carries "Zona, ventana de descargue y citas de retiro (SoS-K22b, SoS-K23b, SoS-K25b)"
+  : LGW -> TRAD -> PLN
+connector F_K25a nature dependency coupling blocking
+  carries "Consulta de estado consolidado de la carga (sale por SoS-K18a)"
+  : CRG -> TRAD -> LGW
+connector F_K25b nature data_flow coupling supply
+  carries "Estado consolidado de la carga consultada (llega por SoS-K18b)"
+  : LGW -> TRAD -> CRG
+
+connector F_K28a nature dependency coupling blocking
+  carries "Consulta del estado de camiones con destino férreo (sale por SoS-K18a), máximo 2/s"
+  : ARR -> TRAD -> LGW
+connector F_K28b nature data_flow coupling supply
+  carries "Posición y ETA con fuente e incertidumbre (llega por SoS-K18b)"
+  : LGW -> TRAD -> ARR
+connector F_K29 nature event_notification coupling supply
+  carries "Estado de servicio de un constituyente (llega por SoS-K34)"
+  : LGW -> TRAD -> ARR
+connector F_K30 nature data_flow coupling supply
+  carries "ETA e incertidumbre por ventana de transferencia"
+  : ARR -> RSV
+connector F_K31 nature event_notification coupling supply
+  carries "Modo degradado activo o inactivo; unidades que no llegaron al cierre"
+  : ARR -> PLN
+connector F_K32 nature event_notification coupling supply
+  carries "Lecturas de acceso que confirman la llegada física"
+  : BRK -> ARR
+connector F_K33 nature dependency coupling blocking
+  carries "Lecturas y escrituras de ETA, unidades pendientes y modo degradado"
+  : ARR -> ARRDB
+connector F_K34a nature data_flow coupling supply
+  carries "Reportes de posición por el camino B"
+  latency 250 period 5000
+  : OBU -> RADB -> SAM
+connector F_K34b nature control_command coupling supply
+  carries "Autoridades de movimiento por el camino B"
+  latency 250 period 5000
+  : SAM -> RADB -> OBU
+connector F_K35 nature data_flow coupling supply
+  carries "Velocidad y distancia, segunda medición"
+  : SENB -> OBU
+connector F_K36 nature data_flow coupling supply
+  carries "Latido cada 0,5 s y último estado de autoridad de cada tren"
+  period 500
+  : SAM -> SAMB
+connector F_K37 nature event_notification coupling supply
+  carries "Estado de rutas hacia el respaldo"
+  : ILK -> SAMB
+connector F_K38a nature dependency coupling blocking
+  carries "Consulta de capacidad calculada"
+  : RSV -> CACHE
+connector F_K38b nature data_flow coupling blocking
+  carries "Capacidad calculada (respuesta de F-K38a)"
+  : CACHE -> RSV
+connector F_K39 nature data_flow coupling supply
+  carries "Actualización tras cada reserva o cambio de surco"
+  : RSV -> CACHE
+
+// Global connectors of the Rail Gateway (as in sos.arch)
+connector SoS_K3a nature dependency coupling blocking
+  carries "Solicitud de capacidad y turno de transferencia camión-tren"
+  agreement "Contrato de transferencia camión-tren (v1)"
+  : RGW -> LGW
+connector SoS_K3b nature data_flow coupling blocking
+  carries "Confirmación de programación y plataforma, o rechazo"
+  agreement "Contrato de transferencia camión-tren (v1)"
+  : LGW -> RGW
+connector SoS_K7a nature dependency coupling blocking
+  carries "Unidades listas para transferencia patio-tren y solicitud de vagones"
+  agreement "Contrato de transferencia puerto-tren (v1)"
+  : PGW -> LGW
+connector SoS_K7b nature data_flow coupling blocking
+  carries "Confirmación de convoy, capacidad, plataforma y ventana, o rechazo"
+  agreement "Contrato de transferencia puerto-tren (v1)"
+  : LGW -> PGW
+connector SoS_K13 nature event_notification coupling sink
+  carries "Custodia recibida por el concesionario y composición del tren"
+  agreement "Semántica de custodia; clave transferId (P8)"
+  : LGW -> NCG
+connector SoS_K14 nature event_notification coupling supply
+  carries "Posición del convoy, estado del corredor y eventos de vía"
+  agreement "Reporte de posición; umbral P6 y clave P8"
+  : LGW -> NCG
+connector SoS_K18a nature dependency coupling blocking
+  carries "Consulta de estado consolidado de la carga en la que participa el concesionario"
+  agreement "Contrato de estado consolidado; regla de acceso y tasa P7"
+  : LGW -> NCG
+connector SoS_K18b nature data_flow coupling blocking
+  carries "Estado consolidado limitado a su carga; v3: posición y ETA estimadas"
+  agreement "Contrato de estado consolidado; regla de acceso y tasa P7"
+  : NCG -> LGW
+connector SoS_K22a nature dependency coupling blocking
+  carries "Aviso de convoy de exportación y solicitud de zona y ventana de descargue"
+  agreement "Contrato de transferencia puerto-tren (v1)"
+  : LGW -> PGW
+connector SoS_K22b nature data_flow coupling blocking
+  carries "Zona de patio, punto y ventana de descargue, o rechazo"
+  agreement "Contrato de transferencia puerto-tren (v1)"
+  : PGW -> LGW
+connector SoS_K23a nature dependency coupling blocking
+  carries "Solicitud de camiones para retirar unidades en terminal férrea"
+  agreement "Contrato de retiro por camión (v1)"
+  : LGW -> RGW
+connector SoS_K23b nature data_flow coupling blocking
+  carries "Vehículos asignados y cita de retiro, o rechazo"
+  agreement "Contrato de retiro por camión (v1)"
+  : RGW -> LGW
+connector SoS_K24a nature dependency coupling blocking
+  carries "Unidades listas para transferencia patio-tren y solicitud de vagones"
+  agreement "Contrato de transferencia puerto-tren (v1)"
+  : CGW -> LGW
+connector SoS_K24b nature data_flow coupling blocking
+  carries "Confirmación de convoy, capacidad, plataforma y ventana, o rechazo"
+  agreement "Contrato de transferencia puerto-tren (v1)"
+  : LGW -> CGW
+connector SoS_K25a nature dependency coupling blocking
+  carries "Aviso de convoy de exportación y solicitud de zona y ventana de descargue"
+  agreement "Contrato de transferencia puerto-tren (v1)"
+  : LGW -> CGW
+connector SoS_K25b nature data_flow coupling blocking
+  carries "Zona de patio, punto y ventana de descargue, o rechazo"
+  agreement "Contrato de transferencia puerto-tren (v1)"
+  : CGW -> LGW
+
+connector SoS_K34 nature event_notification coupling sink
+  carries "Estado de servicio de un constituyente: degradado o restablecido"
+  agreement "Aviso de estado de servicio (P2)"
+  : NCG -> LGW
+// Not a connector of the Rail Gateway: written as in sos.arch for the analysis of SoS-QS1.
+connector SoS_K5 nature event_notification coupling sink
+  carries "Custodia recibida por el transportador; v3: ETA al despachar"
+  agreement "Semántica de custodia; clave transferId (P8)"
+  latency 40000
+  : RGW -> NCG
+
+// Analyses (Delivery 2, sections 3.6.6, 5 and 8.1)
+// F-QS3: custody event from carga-ms to the Rail Gateway during the burst (one queue).
+analysis FQS3CustodyLatency scenario "F-QS3" latency percentile 99 target 500 :
+  F_K19, BRK, TRAD
+// F-QS4: authorization cycle (on-board unit counted at both ends, as in Laboratory 4).
+analysis FQS4AuthorizationCycle scenario "F-QS4" latency percentile 99 target 1000 :
+  OBU, F_K13a, SAM, F_K13b, OBU
+// F-QS5: availability of the authorization chain C1 (sensors, on-board unit, radio, SAM).
+analysis FQS5AuthorizationAvailability scenario "F-QS5" availability target 99.95 :
+  [SEN | SENB] beta 0.10, OBU, [RAD | RADB] beta 0.10, [SAM | SAMB] beta 0.10
+// F-QS5 with the track: Delivery 2 did not duplicate the interlocking nor the concentrator,
+// so the chain counted in series stays below the target (Delivery 2, section 8.3).
+analysis FQS5WithTrack scenario "F-QS5 (con vía)" availability target 99.95 :
+  [SEN | SENB] beta 0.10, OBU, [RAD | RADB] beta 0.10, [SAM | SAMB] beta 0.10, ILK, CON
+// F-QS7: the gateway calls the three services of C4 in parallel; reservas-ms reads the cache.
+analysis FQS7CapacityRequest scenario "F-QS7" latency percentile 99 target 800 :
+  [RSV | TRN | POS], TRAD
+// F-QS2: three lost digests (tope de silencio of F-K11) plus detection in the interlocking.
+analysis FQS2SilentConcentrator scenario "F-QS2" latency target 2000 :
+  F_K11, ILK
+// SoS-QS1 (M4) from the Rail side: SoS-K34 carries the "restablecido" notice to the Rail Gateway
+// and arribos-ms reconciles in parallel with the other consumers (CGW stands for them, as in
+// sos.arch). Budgets of section 3.6.2 (P1) written with = so that SoS-K34 stays as in sos.arch.
+analysis SoSQS1M4 scenario "SoS-QS1 (M4)" latency target 900000 :
+  RGW, SoS_K5, NCG, SoS_K34 = 10000, [CGW | ARR = 300000]

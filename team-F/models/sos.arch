@@ -1,0 +1,259 @@
+// Model (M1) of the SoS: joint model, agreement v4 (Delivery 2, section 3)
+// Written in the base language of Laboratory 4. Budgets of SoS-QS1 (M4) in ms, carried by one
+// element per stage (as K18 carries stage 4 in Lab 4):
+//   RGW 200 s: Carretera recovers and re-sends   SoS_K5 40 s: boundary during the re-send
+//   NCG 230 s: consolidation by the NCS           SoS_K32 10 s: "restablecido" notice
+//   CGW 300 s: reconciliation; the four consumers work in parallel with the same budget,
+//              so the maximum is any one of them (CGW stands for the four)
+system SoS
+
+constituent CPS "Sistema de Gestión de Puertos del Caribe" owner "Operadores portuarios de la costa Caribe"
+constituent PPS "Sistema de Gestión de Puertos del Pacífico" owner "Operadores portuarios de la costa Pacífica"
+constituent RTS "Sistema de Transporte Carretero" owner "Empresas transportadoras y operadores de flotas"
+constituent RLS "Sistema de Transporte Férreo" owner "Concesionarios férreos"
+constituent FTS "Sistema de Transporte Fluvial" owner "Operadores de navegación fluvial"
+constituent NCS "Sistema de Coordinación Nacional" owner "Autoridad nacional (transporte, aduanas y control)"
+
+// T2 — Boundary components
+component CGW "Caribbean Port Gateway" in CPS tier T2 kind software latency 300000
+component PGW "Pacific Port Gateway" in PPS tier T2 kind software
+component RGW "Road Gateway" in RTS tier T2 kind software latency 200000
+component LGW "Rail Gateway" in RLS tier T2 kind software
+component FGW "Fluvial Gateway" in FTS tier T2 kind software
+component NCG "National Coordination Gateway" in NCS tier T2 kind software latency 230000
+
+// Global connectors (SoS-K1 to SoS-K36)
+connector SoS_K1a nature dependency coupling blocking
+  carries "Solicitud de cita portuaria y programación de camión y conductor"
+  agreement "Contrato de citas portuarias (v1)"
+  : RGW -> CGW
+connector SoS_K1b nature data_flow coupling blocking
+  carries "Confirmación de cita, ventana horaria y carril, o rechazo"
+  agreement "Contrato de citas portuarias (v1)"
+  : CGW -> RGW
+connector SoS_K2a nature dependency coupling blocking
+  carries "Solicitud de cita portuaria y programación de camión y conductor"
+  agreement "Contrato de citas portuarias (v1)"
+  : RGW -> PGW
+connector SoS_K2b nature data_flow coupling blocking
+  carries "Confirmación de cita, ventana horaria y carril, o rechazo"
+  agreement "Contrato de citas portuarias (v1)"
+  : PGW -> RGW
+connector SoS_K3a nature dependency coupling blocking
+  carries "Solicitud de capacidad y turno de transferencia camión-tren"
+  agreement "Contrato de transferencia camión-tren (v1)"
+  : RGW -> LGW
+connector SoS_K3b nature data_flow coupling blocking
+  carries "Confirmación de programación y plataforma, o rechazo"
+  agreement "Contrato de transferencia camión-tren (v1)"
+  : LGW -> RGW
+connector SoS_K4a nature dependency coupling blocking
+  carries "Solicitud de capacidad y turno de transferencia camión-barcaza"
+  agreement "Contrato de transferencia camión-barcaza (v1)"
+  : RGW -> FGW
+connector SoS_K4b nature data_flow coupling blocking
+  carries "Confirmación de muelle fluvial y horario, o rechazo"
+  agreement "Contrato de transferencia camión-barcaza (v1)"
+  : FGW -> RGW
+connector SoS_K5 nature event_notification coupling sink
+  carries "Custodia recibida por el transportador; v3: ETA al despachar"
+  agreement "Semántica de custodia; clave transferId (P8)"
+  latency 40000
+  : RGW -> NCG
+connector SoS_K6 nature event_notification coupling supply
+  carries "Posición del vehículo, estado del tránsito y eventos en ruta"
+  agreement "Reporte de posición; umbral P6 y clave P8"
+  : RGW -> NCG
+connector SoS_K7a nature dependency coupling blocking
+  carries "Unidades listas para transferencia patio-tren y solicitud de vagones"
+  agreement "Contrato de transferencia puerto-tren (v1)"
+  : PGW -> LGW
+connector SoS_K7b nature data_flow coupling blocking
+  carries "Confirmación de convoy, capacidad, plataforma y ventana, o rechazo"
+  agreement "Contrato de transferencia puerto-tren (v1)"
+  : LGW -> PGW
+connector SoS_K8 nature event_notification coupling sink
+  carries "Arribo/zarpe de motonave y manifiesto en puertos del Pacífico"
+  agreement "Aviso de arribo y manifiesto (v1)"
+  : PGW -> NCG
+connector SoS_K9a nature dependency coupling blocking
+  carries "Solicitud de validación de levante previa a la salida por portería"
+  agreement "Contrato de levante aduanero (v1)"
+  : PGW -> NCG
+connector SoS_K9b nature data_flow coupling blocking
+  carries "Estado de levante: concedido, inspección requerida o retenido"
+  agreement "Contrato de levante aduanero (v1)"
+  : NCG -> PGW
+connector SoS_K10a nature dependency coupling blocking
+  carries "Arribo de barcaza y solicitud de muelle de transferencia"
+  agreement "Contrato de transferencia puerto-barcaza (v1, v2)"
+  : FGW -> CGW
+connector SoS_K10b nature data_flow coupling blocking
+  carries "Asignación de muelle de transferencia y ventana, o rechazo"
+  agreement "Contrato de transferencia puerto-barcaza (v1, v2)"
+  : CGW -> FGW
+connector SoS_K11 nature event_notification coupling sink
+  carries "Arribo/zarpe de motonave y manifiesto en puertos del Caribe"
+  agreement "Aviso de arribo y manifiesto (v1)"
+  : CGW -> NCG
+connector SoS_K12a nature dependency coupling blocking
+  carries "Solicitud de validación de levante previa a la salida por portería"
+  agreement "Contrato de levante aduanero (v1)"
+  : CGW -> NCG
+connector SoS_K12b nature data_flow coupling blocking
+  carries "Estado de levante: concedido, inspección requerida o retenido"
+  agreement "Contrato de levante aduanero (v1)"
+  : NCG -> CGW
+connector SoS_K13 nature event_notification coupling sink
+  carries "Custodia recibida por el concesionario y composición del tren"
+  agreement "Semántica de custodia; clave transferId (P8)"
+  : LGW -> NCG
+connector SoS_K14 nature event_notification coupling supply
+  carries "Posición del convoy, estado del corredor y eventos de vía"
+  agreement "Reporte de posición; umbral P6 y clave P8"
+  : LGW -> NCG
+connector SoS_K15 nature event_notification coupling sink
+  carries "Custodia recibida por el operador fluvial"
+  agreement "Semántica de custodia; clave transferId (P8)"
+  : FGW -> NCG
+connector SoS_K16 nature event_notification coupling supply
+  carries "Posición de barcaza o remolcador y estado de navegación"
+  agreement "Reporte de posición; umbral P6 y clave P8"
+  : FGW -> NCG
+connector SoS_K17a nature dependency coupling blocking
+  carries "Consulta de estado consolidado de la carga en la que participa el transportador"
+  agreement "Contrato de estado consolidado; regla de acceso y tasa P7"
+  : RGW -> NCG
+connector SoS_K17b nature data_flow coupling blocking
+  carries "Estado consolidado limitado a su carga; v3: posición y ETA estimadas"
+  agreement "Contrato de estado consolidado; regla de acceso y tasa P7"
+  : NCG -> RGW
+connector SoS_K18a nature dependency coupling blocking
+  carries "Consulta de estado consolidado de la carga en la que participa el concesionario"
+  agreement "Contrato de estado consolidado; regla de acceso y tasa P7"
+  : LGW -> NCG
+connector SoS_K18b nature data_flow coupling blocking
+  carries "Estado consolidado limitado a su carga; v3: posición y ETA estimadas"
+  agreement "Contrato de estado consolidado; regla de acceso y tasa P7"
+  : NCG -> LGW
+connector SoS_K19a nature dependency coupling blocking
+  carries "Consulta de estado consolidado de la carga en la que participa el operador fluvial"
+  agreement "Contrato de estado consolidado; regla de acceso y tasa P7"
+  : FGW -> NCG
+connector SoS_K19b nature data_flow coupling blocking
+  carries "Estado consolidado limitado a su carga; v3: posición y ETA estimadas"
+  agreement "Contrato de estado consolidado; regla de acceso y tasa P7"
+  : NCG -> FGW
+connector SoS_K20a nature dependency coupling blocking
+  carries "Consulta de estado consolidado de la carga en la que participa el operador portuario"
+  agreement "Contrato de estado consolidado; regla de acceso y tasa P7"
+  : PGW -> NCG
+connector SoS_K20b nature data_flow coupling blocking
+  carries "Estado consolidado limitado a su carga; v3: posición y ETA estimadas"
+  agreement "Contrato de estado consolidado; regla de acceso y tasa P7"
+  : NCG -> PGW
+connector SoS_K21a nature dependency coupling blocking
+  carries "Consulta de estado consolidado de la carga en la que participa el operador portuario"
+  agreement "Contrato de estado consolidado; regla de acceso y tasa P7"
+  : CGW -> NCG
+connector SoS_K21b nature data_flow coupling blocking
+  carries "Estado consolidado limitado a su carga; v3: posición y ETA estimadas"
+  agreement "Contrato de estado consolidado; regla de acceso y tasa P7"
+  : NCG -> CGW
+connector SoS_K22a nature dependency coupling blocking
+  carries "Aviso de convoy de exportación y solicitud de zona y ventana de descargue"
+  agreement "Contrato de transferencia puerto-tren (v1)"
+  : LGW -> PGW
+connector SoS_K22b nature data_flow coupling blocking
+  carries "Zona de patio, punto y ventana de descargue, o rechazo"
+  agreement "Contrato de transferencia puerto-tren (v1)"
+  : PGW -> LGW
+connector SoS_K23a nature dependency coupling blocking
+  carries "Solicitud de camiones para retirar unidades en terminal férrea"
+  agreement "Contrato de retiro por camión (v1)"
+  : LGW -> RGW
+connector SoS_K23b nature data_flow coupling blocking
+  carries "Vehículos asignados y cita de retiro, o rechazo"
+  agreement "Contrato de retiro por camión (v1)"
+  : RGW -> LGW
+connector SoS_K24a nature dependency coupling blocking
+  carries "Unidades listas para transferencia patio-tren y solicitud de vagones"
+  agreement "Contrato de transferencia puerto-tren (v1)"
+  : CGW -> LGW
+connector SoS_K24b nature data_flow coupling blocking
+  carries "Confirmación de convoy, capacidad, plataforma y ventana, o rechazo"
+  agreement "Contrato de transferencia puerto-tren (v1)"
+  : LGW -> CGW
+connector SoS_K25a nature dependency coupling blocking
+  carries "Aviso de convoy de exportación y solicitud de zona y ventana de descargue"
+  agreement "Contrato de transferencia puerto-tren (v1)"
+  : LGW -> CGW
+connector SoS_K25b nature data_flow coupling blocking
+  carries "Zona de patio, punto y ventana de descargue, o rechazo"
+  agreement "Contrato de transferencia puerto-tren (v1)"
+  : CGW -> LGW
+connector SoS_K26a nature dependency coupling blocking
+  carries "Solicitud de camiones para retirar unidades liberadas en el Caribe"
+  agreement "Contrato de retiro por camión (v1)"
+  : CGW -> RGW
+connector SoS_K26b nature data_flow coupling blocking
+  carries "Vehículos asignados y cita de retiro, o rechazo"
+  agreement "Contrato de retiro por camión (v1)"
+  : RGW -> CGW
+connector SoS_K27a nature dependency coupling blocking
+  carries "Solicitud de camiones para retirar unidades liberadas en el Pacífico"
+  agreement "Contrato de retiro por camión (v1)"
+  : PGW -> RGW
+connector SoS_K27b nature data_flow coupling blocking
+  carries "Vehículos asignados y cita de retiro, o rechazo"
+  agreement "Contrato de retiro por camión (v1)"
+  : RGW -> PGW
+connector SoS_K28a nature dependency coupling blocking
+  carries "Solicitud de camiones para retirar unidades en puerto fluvial"
+  agreement "Contrato de retiro por camión (v1)"
+  : FGW -> RGW
+connector SoS_K28b nature data_flow coupling blocking
+  carries "Vehículos asignados y cita de retiro, o rechazo"
+  agreement "Contrato de retiro por camión (v1)"
+  : RGW -> FGW
+connector SoS_K29 nature event_notification coupling sink
+  carries "Custodia recibida por el puerto del Caribe"
+  agreement "Semántica de custodia; clave transferId (P8)"
+  : CGW -> NCG
+connector SoS_K30 nature event_notification coupling sink
+  carries "Custodia recibida por el puerto del Pacífico"
+  agreement "Semántica de custodia; clave transferId (P8)"
+  : PGW -> NCG
+connector SoS_K31a nature dependency coupling blocking
+  carries "Unidades liberadas para transferencia patio-barcaza y solicitud de capacidad"
+  agreement "Contrato de transferencia puerto-barcaza (v1, v2)"
+  : CGW -> FGW
+connector SoS_K31b nature data_flow coupling blocking
+  carries "Barcazas asignadas, muelle y ventana de cargue, o rechazo"
+  agreement "Contrato de transferencia puerto-barcaza (v1, v2)"
+  : FGW -> CGW
+connector SoS_K32 nature event_notification coupling sink
+  carries "Cambio de levante en puertos del Caribe; v3: estado de servicio"
+  agreement "Aviso de levante y de estado de servicio (v2, P2)"
+  latency 10000
+  : NCG -> CGW
+connector SoS_K33 nature event_notification coupling sink
+  carries "Cambio de levante en puertos del Pacífico; v3: estado de servicio"
+  agreement "Aviso de levante y de estado de servicio (v2, P2)"
+  : NCG -> PGW
+connector SoS_K34 nature event_notification coupling sink
+  carries "Estado de servicio de un constituyente: degradado o restablecido"
+  agreement "Aviso de estado de servicio (P2)"
+  : NCG -> LGW
+connector SoS_K35 nature event_notification coupling sink
+  carries "Estado de servicio de un constituyente: degradado o restablecido"
+  agreement "Aviso de estado de servicio (P2)"
+  : NCG -> FGW
+connector SoS_K36 nature event_notification coupling sink
+  carries "Paso por peaje: vehículo, peaje, fecha y hora"
+  agreement "Paso por peaje; clave P8 (P3)"
+  : RGW -> NCG
+
+// Analysis of SoS-QS1, measure M4 (section 3.6.6 of Delivery 2)
+analysis SoSQS1M4 scenario "SoS-QS1 (M4)" latency target 900000 :
+  RGW, SoS_K5, NCG, SoS_K32, CGW

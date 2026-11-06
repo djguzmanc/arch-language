@@ -1,0 +1,60 @@
+flowchart LR
+  subgraph RLS["Sistema de Transporte Férreo"]
+    CCF["Consola del CCF (T1)"]
+    DMI["Interfaz del maquinista (DMI) (T1)"]
+    CTF["Consola de terminal férrea (T1)"]
+    BRK["Broker de eventos férreos (T2)"]
+    RAD["Radio tren–tierra (T2)"]
+    CON["Concentrador de equipos de campo (T2)"]
+    PLN["Servicio de planificación y despacho (T3)"]
+    SAM["Servicio de autoridad de movimiento (SAM) (T3)"]
+    ILK["Enclavamiento (T3)"]
+    TRN["trenes-ms (T3)"]
+    CRG["carga-ms (T3)"]
+    POS["posicion-ms (T3)"]
+    RSV["reservas-ms (T3)"]
+    TRNDB[("trenes-db (T4)")]
+    CRGDB[("carga-db (T4)")]
+    POSDB[("posicion-db (T4)")]
+    RSVDB[("reservas-db (T4)")]
+    JRU[("Registrador jurídico de a bordo (JRU) (T4)")]
+    HIST[("Repositorio histórico operacional (T4)")]
+    OBU["Unidad a bordo (T5)"]
+    SEN["Sensores de la locomotora (T5)"]
+    BA["Actuador de freno (T5)"]
+    APV["Aparatos de vía (agujas y señales) (T5)"]
+    DET["Detectores de vía (T5)"]
+    LID["Lector de identificación de vagones (T5)"]
+  end
+  CCF -->|F_K1| PLN
+  CTF -->|F_K2| CRG
+  CTF -->|F_K2| TRN
+  CTF -->|F_K2| RSV
+  PLN -->|F_K3| RSV
+  PLN -->|F_K4| TRN
+  PLN -->|F_K5| ILK
+  ILK -->|F_K6| PLN
+  ILK -->|F_K7| SAM
+  ILK -->|F_K8| APV
+  DET -->|F_K9| CON
+  LID -->|F_K10| CON
+  CON -->|F_K11| ILK
+  CON -->|F_K12| BRK
+  OBU -->|F_K13a| RAD
+  RAD -->|F_K13a| SAM
+  SAM -->|F_K13b| RAD
+  RAD -->|F_K13b| OBU
+  SEN -->|F_K14| OBU
+  OBU -->|F_K15| BA
+  OBU -->|F_K16| DMI
+  OBU -->|F_K17| JRU
+  SAM -->|F_K18| BRK
+  PLN -->|F_K19| BRK
+  CRG -->|F_K19| BRK
+  BRK -->|F_K20| POS
+  BRK -->|F_K26| CRG
+  BRK -->|F_K27| HIST
+  TRN -->|F_K22| TRNDB
+  CRG -->|F_K22| CRGDB
+  POS -->|F_K22| POSDB
+  RSV -->|F_K22| RSVDB

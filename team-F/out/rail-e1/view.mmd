@@ -1,0 +1,110 @@
+flowchart LR
+  subgraph CPS["Sistema de Gestión de Puertos del Caribe"]
+    CGW["Caribbean Port Gateway (T2)"]
+  end
+  subgraph PPS["Sistema de Gestión de Puertos del Pacífico"]
+    PGW["Pacific Port Gateway (T2)"]
+  end
+  subgraph RTS["Sistema de Transporte Carretero"]
+    RGW["Road Gateway (T2)"]
+  end
+  subgraph RLS["Sistema de Transporte Férreo"]
+    CCF["Consola del CCF (T1)"]
+    DMI["Interfaz del maquinista (DMI) (T1)"]
+    CTF["Consola de terminal férrea (T1)"]
+    LGW["Rail Gateway (T2)"]
+    TRAD["Traductor canónico (T2)"]
+    BRK["Broker de eventos férreos (T2)"]
+    RAD["Radio tren–tierra (T2)"]
+    CON["Concentrador de equipos de campo (T2)"]
+    PLN["Servicio de planificación y despacho (T3)"]
+    SAM["Servicio de autoridad de movimiento (SAM) (T3)"]
+    ILK["Enclavamiento (T3)"]
+    TRN["trenes-ms (T3)"]
+    CRG["carga-ms (T3)"]
+    POS["posicion-ms (T3)"]
+    RSV["reservas-ms (T3)"]
+    TRNDB[("trenes-db (T4)")]
+    CRGDB[("carga-db (T4)")]
+    POSDB[("posicion-db (T4)")]
+    RSVDB[("reservas-db (T4)")]
+    JRU[("Registrador jurídico de a bordo (JRU) (T4)")]
+    HIST[("Repositorio histórico operacional (T4)")]
+    OBU["Unidad a bordo (T5)"]
+    SEN["Sensores de la locomotora (T5)"]
+    BA["Actuador de freno (T5)"]
+    APV["Aparatos de vía (agujas y señales) (T5)"]
+    DET["Detectores de vía (T5)"]
+    LID["Lector de identificación de vagones (T5)"]
+  end
+  subgraph NCS["Sistema de Coordinación Nacional"]
+    NCG["National Coordination Gateway (T2)"]
+  end
+  CCF -->|F_K1| PLN
+  CTF -->|F_K2| CRG
+  CTF -->|F_K2| TRN
+  CTF -->|F_K2| RSV
+  PLN -->|F_K3| RSV
+  PLN -->|F_K4| TRN
+  PLN -->|F_K5| ILK
+  ILK -->|F_K6| PLN
+  ILK -->|F_K7| SAM
+  ILK -->|F_K8| APV
+  DET -->|F_K9| CON
+  LID -->|F_K10| CON
+  CON -->|F_K11| ILK
+  CON -->|F_K12| BRK
+  OBU -->|F_K13a| RAD
+  RAD -->|F_K13a| SAM
+  SAM -->|F_K13b| RAD
+  RAD -->|F_K13b| OBU
+  SEN -->|F_K14| OBU
+  OBU -->|F_K15| BA
+  OBU -->|F_K16| DMI
+  OBU -->|F_K17| JRU
+  SAM -->|F_K18| BRK
+  PLN -->|F_K19| BRK
+  CRG -->|F_K19| BRK
+  BRK -->|F_K20| POS
+  BRK -->|F_K26| CRG
+  BRK -->|F_K27| HIST
+  BRK -->|F_K21| TRAD
+  TRAD -->|F_K21| LGW
+  TRN -->|F_K22| TRNDB
+  CRG -->|F_K22| CRGDB
+  POS -->|F_K22| POSDB
+  RSV -->|F_K22| RSVDB
+  LGW -->|F_K23a| TRAD
+  TRAD -->|F_K23a| RSV
+  TRAD -->|F_K23a| TRN
+  TRAD -->|F_K23a| POS
+  RSV -->|F_K23b| TRAD
+  TRAD -->|F_K23b| LGW
+  TRN -->|F_K23b| TRAD
+  POS -->|F_K23b| TRAD
+  PLN -->|F_K24a| TRAD
+  TRAD -->|F_K24a| LGW
+  LGW -->|F_K24b| TRAD
+  TRAD -->|F_K24b| PLN
+  CRG -->|F_K25a| TRAD
+  TRAD -->|F_K25a| LGW
+  LGW -->|F_K25b| TRAD
+  TRAD -->|F_K25b| CRG
+  RGW -->|SoS_K3a| LGW
+  LGW -->|SoS_K3b| RGW
+  PGW -->|SoS_K7a| LGW
+  LGW -->|SoS_K7b| PGW
+  LGW -->|SoS_K13| NCG
+  LGW -->|SoS_K14| NCG
+  LGW -->|SoS_K18a| NCG
+  NCG -->|SoS_K18b| LGW
+  LGW -->|SoS_K22a| PGW
+  PGW -->|SoS_K22b| LGW
+  LGW -->|SoS_K23a| RGW
+  RGW -->|SoS_K23b| LGW
+  CGW -->|SoS_K24a| LGW
+  LGW -->|SoS_K24b| CGW
+  LGW -->|SoS_K25a| CGW
+  CGW -->|SoS_K25b| LGW
+  RGW -->|SoS_K5| NCG
+  NCG -->|SoS_K32| CGW

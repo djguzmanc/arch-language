@@ -1,0 +1,81 @@
+// Metamodel (M2) of the architecture description language for the SoS.
+// Starting point: language of Laboratory 4. Adaptations of team F (Rail) are marked [F].
+// Every adaptation is optional, so models written in the base language (sos.arch) still conform.
+Model:
+  'system' name=ID
+  constituents+=Constituent
+  elements+=Element
+  analyses*=Analysis
+;
+
+Constituent:
+  'constituent' name=ID label=STRING 'owner' owner=STRING
+;
+
+Element:
+  Component | Connector
+;
+
+Component:
+  'component' name=ID label=STRING
+  'in' system=[Constituent]
+  'tier' tier=Tier
+  'kind' kind=Kind
+  (translator?='translator')?               // [F] anti-corruption layer of its constituent (C7)
+  ('availability' availability=NUMBER)?
+  ('latency' latency=NUMBER)?               // budget in ms; in a percentile analysis, a p99.9 budget (A9)
+  ('capacity' capacity=NUMBER)?             // [F] requests or events per second it can serve (queue)
+  ('load' load=NUMBER)?                     // [F] requests or events per second it receives in the scenario
+;
+
+Connector:
+  'connector' name=ID
+  'nature' natures+=Nature[',']
+  'coupling' coupling=Coupling
+  'carries' info=STRING
+  ('agreement' agreement=STRING)?
+  ('availability' availability=NUMBER)?
+  ('latency' latency=NUMBER)?
+  ('period' period=NUMBER)?                 // [F] ms between deliveries: a silence longer than this is a failure
+  ':' links+=Link[',']
+;
+
+Link:
+  path+=[Component]['->']
+;
+
+Analysis:
+  'analysis' name=ID 'scenario' scenario=STRING
+  metric=Metric
+  ('percentile' percentile=NUMBER)?         // [F] the target is this percentile of the chain (Boole, A12)
+  'target' target=NUMBER ':'
+  factors+=Factor[',']
+;
+
+Factor:
+  Group | Single
+;
+
+// [F] A factor may carry its own budget for a latency analysis (= value, in ms), so a budget
+// agreed at the global level is used without changing the element as written in sos.arch,
+// or be declared unbounded (= unbounded) when the structure gives that stage no limit.
+Single:
+  ref=[Element] ('=' (unbounded?='unbounded' | value=NUMBER))?
+;
+
+// In availability, a group is a set of replicas with common-cause fraction beta (Lab 4);
+// without beta the replicas are independent (beta = 0).
+// [F] In latency, a group is a set of stages that run in parallel: its maximum counts.
+Group:
+  '[' alternatives+=Single['|'] ']' ('beta' beta=NUMBER)?
+;
+
+Tier: 'T1' | 'T2' | 'T3' | 'T4' | 'T5';
+Kind: 'hardware_software' | 'hardware' | 'software' | 'physical';
+Nature: 'data_flow' | 'control_command' | 'dependency' | 'event_notification';
+Coupling: 'blocking' | 'supply' | 'sink';
+Metric: 'availability' | 'latency';
+
+Comment:
+  /\/\/.*$/
+;

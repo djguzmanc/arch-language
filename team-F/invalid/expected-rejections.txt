@@ -1,0 +1,4 @@
+invalid/c5-percentile.arch: REJECTED: FQS3CustodyLatency: 2 fixed stages leave no exceedance for p99.9
+invalid/c5-queue-load.arch: REJECTED: RSV: a queue needs a load below its capacity and no fixed latency
+invalid/c6-hierarchy.arch: REJECTED: ILK receives control commands from several sources ['CCF', 'PLN'] through ['F_K1x', 'F_K5']
+invalid/c7-acl.arch: REJECTED: F_K25a: CRG reaches the gateway LGW without the translator

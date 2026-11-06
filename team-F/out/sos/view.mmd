@@ -1,0 +1,76 @@
+flowchart LR
+  subgraph CPS["Sistema de Gestión de Puertos del Caribe"]
+    CGW["Caribbean Port Gateway (T2)"]
+  end
+  subgraph PPS["Sistema de Gestión de Puertos del Pacífico"]
+    PGW["Pacific Port Gateway (T2)"]
+  end
+  subgraph RTS["Sistema de Transporte Carretero"]
+    RGW["Road Gateway (T2)"]
+  end
+  subgraph RLS["Sistema de Transporte Férreo"]
+    LGW["Rail Gateway (T2)"]
+  end
+  subgraph FTS["Sistema de Transporte Fluvial"]
+    FGW["Fluvial Gateway (T2)"]
+  end
+  subgraph NCS["Sistema de Coordinación Nacional"]
+    NCG["National Coordination Gateway (T2)"]
+  end
+  RGW -->|SoS_K1a| CGW
+  CGW -->|SoS_K1b| RGW
+  RGW -->|SoS_K2a| PGW
+  PGW -->|SoS_K2b| RGW
+  RGW -->|SoS_K3a| LGW
+  LGW -->|SoS_K3b| RGW
+  RGW -->|SoS_K4a| FGW
+  FGW -->|SoS_K4b| RGW
+  RGW -->|SoS_K5| NCG
+  RGW -->|SoS_K6| NCG
+  PGW -->|SoS_K7a| LGW
+  LGW -->|SoS_K7b| PGW
+  PGW -->|SoS_K8| NCG
+  PGW -->|SoS_K9a| NCG
+  NCG -->|SoS_K9b| PGW
+  FGW -->|SoS_K10a| CGW
+  CGW -->|SoS_K10b| FGW
+  CGW -->|SoS_K11| NCG
+  CGW -->|SoS_K12a| NCG
+  NCG -->|SoS_K12b| CGW
+  LGW -->|SoS_K13| NCG
+  LGW -->|SoS_K14| NCG
+  FGW -->|SoS_K15| NCG
+  FGW -->|SoS_K16| NCG
+  RGW -->|SoS_K17a| NCG
+  NCG -->|SoS_K17b| RGW
+  LGW -->|SoS_K18a| NCG
+  NCG -->|SoS_K18b| LGW
+  FGW -->|SoS_K19a| NCG
+  NCG -->|SoS_K19b| FGW
+  PGW -->|SoS_K20a| NCG
+  NCG -->|SoS_K20b| PGW
+  CGW -->|SoS_K21a| NCG
+  NCG -->|SoS_K21b| CGW
+  LGW -->|SoS_K22a| PGW
+  PGW -->|SoS_K22b| LGW
+  LGW -->|SoS_K23a| RGW
+  RGW -->|SoS_K23b| LGW
+  CGW -->|SoS_K24a| LGW
+  LGW -->|SoS_K24b| CGW
+  LGW -->|SoS_K25a| CGW
+  CGW -->|SoS_K25b| LGW
+  CGW -->|SoS_K26a| RGW
+  RGW -->|SoS_K26b| CGW
+  PGW -->|SoS_K27a| RGW
+  RGW -->|SoS_K27b| PGW
+  FGW -->|SoS_K28a| RGW
+  RGW -->|SoS_K28b| FGW
+  CGW -->|SoS_K29| NCG
+  PGW -->|SoS_K30| NCG
+  CGW -->|SoS_K31a| FGW
+  FGW -->|SoS_K31b| CGW
+  NCG -->|SoS_K32| CGW
+  NCG -->|SoS_K33| PGW
+  NCG -->|SoS_K34| LGW
+  NCG -->|SoS_K35| FGW
+  RGW -->|SoS_K36| NCG
