@@ -1,7 +1,8 @@
 // Metamodel (M2) of the architecture description language for the SoS.
 // Starting point: language of Laboratory 4. Adaptations of team D are marked [D];
-// adaptations of team A (Caribbean Port, CPMS) are marked [A]. Every [A] change is an
-// addition: the models written for [D] keep their meaning.
+// adaptations of team A (Caribbean Port, CPMS) are marked [A]; adaptations of
+// team C (Road Transportation, RTS) are marked [C]. Every [A] and [C] change is an
+// addition: the models written for [D] and [A] keep their meaning.
 Model:
   'system' name=ID
   constituents+=Constituent
@@ -25,9 +26,12 @@ Component:
   ('domain' domain=ID)?                     // [D] owner domain inside the constituent (C4)
   ('availability' availability=NUMBER)?
   ('latency' latency=NUMBER)?
-  ('event_capacity' event_capacity=NUMBER)? // [D] events/s one instance can consume
-  ('event_load' event_load=NUMBER)?         // [D] events/s received in the peak
+  ('event_capacity' event_capacity=NUMBER)? // [D, C] events/s one instance can consume or drain
+  ('event_load' event_load=NUMBER)?         // [D, C] events/s received in the peak
   ('instances' instances=INT)?              // [D] active instances (default 1)
+  ('period' period=NUMBER)?                 // [C] period of periodic publication (ms)
+  ('misses' misses=NUMBER)?                 // [C] missed periods before detection
+  ('buffer' buffer=NUMBER)?                 // [C] retention capacity (events)
 ;
 
 Connector:
@@ -38,8 +42,11 @@ Connector:
   ('agreement' agreement=STRING)?
   ('availability' availability=NUMBER)?
   ('latency' latency=NUMBER)?
-  ('event_capacity' event_capacity=NUMBER)? // [A] requests or events/s the connector admits
-  ('event_load' event_load=NUMBER)?         // [A] requests or events/s it carries in the peak
+  ('event_capacity' event_capacity=NUMBER)? // [A, C] requests or events/s the connector admits or drains
+  ('event_load' event_load=NUMBER)?         // [A, C] requests or events/s it carries in the peak
+  ('period' period=NUMBER)?                 // [C] period of periodic publication (ms)
+  ('misses' misses=NUMBER)?                 // [C] missed periods before detection
+  ('buffer' buffer=NUMBER)?                 // [C] retention capacity (events)
   ':' links+=Link[',']
 ;
 
@@ -51,7 +58,9 @@ Analysis:
   'analysis' name=ID 'scenario' scenario=STRING
   metric=Metric
   ('backlog' backlog=NUMBER)?               // [D] events to absorb (recovery)
-  'target' target=NUMBER ':'
+  'target' target=NUMBER
+  ('outage' outage=NUMBER)?                 // [C] outage duration in seconds (drain)
+  ':'
   factors+=Factor[',']
 ;
 
@@ -68,7 +77,7 @@ Single:
 ;
 
 // [D] In availability, a group is a set of replicas with fraction beta (Lab 4).
-// In deadline, a group is a set of parties that work in parallel (the maximum counts).
+// In deadline, latency and detection, a group is a set of parties that work in parallel (the maximum counts).
 Group:
   '[' members+=Single['|'] ']' ('beta' beta=NUMBER)?
 ;
@@ -78,7 +87,8 @@ Kind: 'hardware_software' | 'hardware' | 'software' | 'physical';
 Nature: 'data_flow' | 'control_command' | 'dependency' | 'event_notification';
 Coupling: 'blocking' | 'supply' | 'sink';
 Metric: 'availability' | 'latency' | 'deadline' | 'recovery'    // [D] deadline, recovery
-      | 'utilization';                                         // [A] load / (capacity x instances)
+      | 'utilization'                                           // [A] load / (capacity x instances)
+      | 'detection' | 'drain';                                  // [C] silence detection, buffer drain
 
 // [A] Identifiers of Deliveries 1 and 2 (T2.1, A-K70, A-K85'): letters, digits and '_',
 // with '.' or '-' inside and an optional prime. Every ID of the base language is an Ident.

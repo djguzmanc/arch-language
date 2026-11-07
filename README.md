@@ -4,7 +4,7 @@ Lenguaje del Laboratorio 4 adaptado por el equipo D, modelo conjunto `sos.arch` 
 modelos del NCS antes (`ncs-e1.arch`) y después (`ncs-e2.arch`) de la Entrega 2,
 transformaciones y artefactos generados.
 
-El lenguaje es común a los equipos: el equipo A (Puerto del Caribe, CPMS) le agregó sus adaptaciones, marcadas `[A]`, sin cambiar las del equipo D. Ver la sección «Equipo A» al final.
+El lenguaje es común a los equipos: el equipo A (Puerto del Caribe, CPMS) le agregó sus adaptaciones, marcadas `[A]`, y el equipo C (Transporte Carretero, RTS) las suyas, marcadas `[C]`, sin cambiar las anteriores. Ver las secciones «Equipo A» y «Equipo C» al final.
 
 ## Ejecución
 
@@ -132,3 +132,15 @@ C9 y C10 se revisan solo dentro de `CPS`, porque un estilo se atribuye a una par
 | A-QS6: consultas a SoS-K21a | 75 %, cumple | 75 %, cumple | 1,5 de 2 consultas/s | Ninguna |
 | A-QS6: reconciliación de 120 citas | 60 s (120 s con reintento), cumple | 60 s (120 s), cumple | 60 s / 120 s ≤ 300 s | Ninguna |
 | SoS-QS1 (M4) | 780.000 ms, cumple | 780.000 ms, cumple | 780 s | Ninguna |
+
+## Adaptaciones del lenguaje [C] — Equipo C (Transporte Carretero, RTS)
+
+Las adaptaciones del metamodelo del equipo C están marcadas `[C]` en `arch.tx`, `metamodel.py` y `transformations.py` (reutilizando `event_load`, `event_capacity`, `= valor` y `Group` del lenguaje común):
+
+| Adaptación | Dónde | Para qué |
+|------------|-------|----------|
+| Propiedades `period`, `misses`, `buffer` | Gramática | Detección de silencio periódico (RTS-QS4, P6) y capacidad de retención en cola (RTS-QS1, M4) |
+| Métricas `detection` y `drain` (con `outage`) | Gramática, C5, análisis | `detection` suma `period × misses` y latencia (`period 0` = silencio no detectable, ∞); `drain` calcula eventos perdidos y tiempo de drenado `kept / (event_capacity - event_load)` |
+| Presupuestos (`= valor`) y grupos (`[A \| B]`) también en `latency` | C5, análisis | Evaluar tramos con presupuesto propio y etapas en paralelo en ms |
+| `auto_init_attributes=False` | Metamodelo | Distinguir una propiedad no declarada (`None`, error de C5) de una declarada con valor `0` (`period 0`, `buffer 0`) |
+| Restricciones C5 (extendida), C7, C8, C10 (`RTS`) y C11 (cliente-servidor `T1 -> T2` en `RTS`) | Metamodelo | Validar estilos arquitectónicos del RTS y consistencia de los grupos de análisis |
