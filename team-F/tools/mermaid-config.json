@@ -1,0 +1,5 @@
+{
+  "layout": "elk",
+  "flowchart": { "curve": "linear", "nodeSpacing": 45, "rankSpacing": 70, "padding": 12, "htmlLabels": true },
+  "themeVariables": { "fontSize": "18px" }
+}

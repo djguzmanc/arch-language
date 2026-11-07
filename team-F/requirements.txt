@@ -1,0 +1,2 @@
+textX==4.3.0
+Arpeggio==2.0.3

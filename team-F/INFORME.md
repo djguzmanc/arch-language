@@ -1,6 +1,6 @@
 # Entrega 3. Modelado arquitectónico del Sistema de Sistemas
 
-Equipo F · Sistema de Transporte Férreo
+Equipo F · Sistema de Transporte Férreo\
 Arquitectura de Software a Gran Escala, 2026-II
 
 ## 1. Información del equipo
@@ -36,8 +36,8 @@ Esta sección contiene los dos elementos del acuerdo conjunto (enunciado, §4.1)
    - el componente de frontera (T2) de cada uno;
    - los conectores globales SoS-K1 a SoS-K36, cada uno con su acuerdo.
 
-   Corresponde al acuerdo conjunto v4 de la Entrega 2 y está escrito en el lenguaje base del
-   Laboratorio 4.
+   Corresponde al acuerdo conjunto v4 de la Entrega 2 (convención 13 de la sección 5) y está escrito
+   en el lenguaje base del Laboratorio 4.
 2. **El análisis de SoS-QS1 producido desde ese modelo** (`out/sos/analysis.md`):
 
 | Stage | Budget |
@@ -115,26 +115,40 @@ En disponibilidad, un grupo sin `beta` se toma como réplicas independientes (β
 |----|-------------|--------|
 | C1–C4 | Sin cambios respecto del Laboratorio 4 | — |
 | C5 (extendida) | Cada factor tiene lo que su métrica necesita: disponibilidad; o latencia, presupuesto o una cola. Una cola tiene carga menor que su capacidad y no tiene latencia fija. Con `percentile`, los tramos fijos tienen que dejar excedencia para las colas. Los presupuestos y el percentil solo valen en latencia. Las réplicas de un grupo de disponibilidad tienen la misma disponibilidad | U5, Lectura 2, §4.2; A10 y A12 |
-| C6 (nueva, de estilo) | Cada componente recibe comandos de control de una sola fuente, contando todos los conectores | Estilo jerárquico del férreo (Entrega 1, §5) |
-| C7 (nueva, de patrón) | En un constituyente que declara un traductor, el vecino del gateway dentro del constituyente es siempre el traductor | Gateway constituyente con capa anticorrupción (Entrega 1, §4.3 y §6) |
+| C6 (nueva, de estilo) | La autoridad fluye hacia abajo desde una sola fuente: cada componente recibe comandos de control de una sola fuente, contando todos los conectores y los saltos intermedios; ningún comando sube de nivel (T1–T5) y los comandos no forman ciclos | Estilo jerárquico del férreo (Entrega 1, §5) |
+| C7 (nueva, de patrón) | En un constituyente que declara un traductor, un solo componente cruza la frontera, el gateway; no es el traductor, y su vecino dentro del constituyente es siempre el traductor | Gateway constituyente con capa anticorrupción (Entrega 1, §4.3, §6 y §7) |
 
 ### 4.3. Restricción derivada de un estilo: C6, jerárquico
 
 En la Entrega 1, el estilo jerárquico se atribuyó a la cadena planificación y despacho →
 enclavamiento → aparatos de vía. La autoridad fluye hacia abajo desde una sola fuente, y el
-enclavamiento es la única fuente de órdenes sobre los aparatos de vía. C2 (Laboratorio 4) solo
-verifica la fuente única dentro de un conector. C6 la verifica sobre todo el modelo, de modo que un
-segundo conector no puede introducir otra autoridad sobre el mismo destino:
+enclavamiento es la única fuente de órdenes sobre los aparatos de vía; el estado fluye hacia arriba.
+C2 (Laboratorio 4) solo verifica la fuente única dentro de un conector. C6 verifica las tres
+condiciones del estilo sobre todo el modelo:
+
+- **Una sola fuente.** Un segundo conector no puede introducir otra autoridad sobre el mismo destino,
+  tampoco como salto intermedio de un camino más largo.
+- **Hacia abajo.** Un comando no va de su origen a un destino de un nivel superior (T5 hacia T3, por
+  ejemplo).
+- **Sin ciclos.** Dentro del mismo nivel, como planificación y enclavamiento en T3, dos componentes no
+  pueden mandarse entre sí.
 
 ```python
-commanders = {}
-for k in connectors:
-    if 'control_command' in k.natures:
-        for link in k.links:
-            commanders.setdefault(link.path[-1].name, {}).setdefault(link.path[0].name, k)
+commands = [(k, link) for k in connectors if 'control_command' in k.natures for link in k.links]
+commanders, authority = {}, {}
+for k, link in commands:
+    for c in link.path[1:]:
+        commanders.setdefault(c.name, {}).setdefault(link.path[0].name, k)
+        authority.setdefault(link.path[0].name, {}).setdefault(c.name, k)
 for target, sources in commanders.items():
     if len(sources) > 1:
         _error(f'{target} receives control commands from several sources ...')
+for k, link in commands:
+    if link.path[-1].tier < link.path[0].tier:
+        _error(f'{k.name}: ... up the tiers', k)
+cycle = _cycle(authority)
+if cycle:
+    _error(f'{k.name}: control commands form a cycle ...', k)
 ```
 
 **Modelo rechazado** (`invalid/c6-hierarchy.arch`). Es `rail-e1.arch` con un conector agregado, en el
@@ -160,7 +174,9 @@ Los demás modelos mal formados y sus mensajes:
 
 | Modelo | Cambio | Mensaje |
 |--------|--------|---------|
+| `c6-cycle.arch` | El enclavamiento le ordena a planificación, que ya le ordena a él: `ILK -> PLN` | `F_K5: control commands form a cycle ILK -> PLN -> ILK` |
 | `c7-acl.arch` | carga-ms llega al Rail Gateway sin el traductor: `CRG -> LGW` | `F_K25a: CRG reaches the gateway LGW without the translator` |
+| `c7-boundary.arch` | El traductor cruza la frontera sin pasar por el gateway: `TRAD -> NCG` | `RLS: components ['LGW', 'TRAD'] cross its boundary; only its gateway may` |
 | `c5-queue-load.arch` | reservas-ms con carga 14 y capacidad 12 | `RSV: a queue needs a load below its capacity and no fixed latency` |
 | `c5-percentile.arch` | F-QS3 con meta p99,9 y dos tramos fijos | `FQS3CustodyLatency: 2 fixed stages leave no exceedance for p99.9` |
 
@@ -183,8 +199,8 @@ La tabla de conectores es la del Laboratorio 4, sin cambios. Se agregaron tres c
   acotados. Si un análisis usa solo factores simples con `latency`, la salida es idéntica a la del
   Laboratorio 4.
 
-Las vistas se renderizaron con mermaid-cli a partir de los `.mmd` generados. Están en `figures/` en
-SVG, sin pérdida al ampliar, y en PNG. Se muestran las dos vistas parciales del modelo resultante.
+Las vistas se renderizaron con mermaid-cli y el motor de distribución ELK a partir de los `.mmd`
+generados. Están en `figures/` en SVG, sin pérdida al ampliar, y en PNG de alta resolución. Se muestran las dos vistas parciales del modelo resultante.
 Las vistas completas de los dos modelos y las parciales del de partida están en la misma carpeta.
 
 ![Figura 4.1. Vista de coordinación de rail-e2: conectores que cruzan la frontera o pasan por el Traductor](figures/rail-e2-view-coordination.svg)
@@ -259,6 +275,11 @@ A los tres se les aplican las transformaciones de la sección 4.4.
       `unbounded`.
     - En el «después», arribos-ms reconcilia con 300 s y SoS-K34 lleva el aviso (10 s, escrito como
       presupuesto del análisis).
+13. **Numeración del acuerdo.** `sos.arch` usa la numeración del documento compartido por los seis
+    equipos: v1 y v2 para los conectores de la estructura de la Entrega 1, v3 para los cambios de la
+    Entrega 2 y v4 para confirmaciones posteriores, sin cambios de estructura. La Entrega 2 de este
+    equipo llama «versión 2 del acuerdo» (§3.6.5) a lo que ese documento llama v3. Por eso SoS-K5 dice
+    «v3: ETA al despachar» en `sos.arch` y «v2» en la Entrega 2: es el mismo cambio.
 
 ## 6. Resultados
 
@@ -268,7 +289,7 @@ A los tres se les aplican las transformaciones de la sección 4.4.
 | SoS-QS1 (M4), modelos del férreo | No acotado, no cumple | 780 s, cumple | Sin presupuestos → 780 s | Ninguna. La Entrega 2 (§8.4) reporta el «antes» sin presupuestos, y el modelo lo expresa como un tramo no acotado del férreo |
 | F-QS2: el concentrador se queda callado | No acotado, no cumple | 1,5 s, cumple | Nunca detecta → 1,5 s | Ninguna |
 | F-QS3: custodia durante la ráfaga del broker | 1.051 ms, no cumple | 209 ms, cumple | ≥ 920 ms → 209 ms | En el «antes», la Entrega 2 reportó una cota inferior: solo la cola, con p99 ≈ 4,6 × media. El modelo compone la cadena completa con Boole: 25 + 965,7 (cola al p99,2) + 60 ms |
-| F-QS4: ciclo de autorización | 740 ms, cumple | 780 ms, cumple | 740 → 780 ms | Ninguna |
+| F-QS4: ciclo de autorización | 740 ms, cumple | 780 ms, cumple | 740 → 780 ms | Ninguna en el ciclo. Esta fila evalúa solo la latencia: la medida «0 falsos aceptados» no se cumplía antes (Entrega 2, §6.1) y el lenguaje no la expresa (sección 7.1) |
 | F-QS5: disponibilidad de la cadena C1 | 99,79 % (18,4 h/año), no cumple | 99,97 % (2,6 h/año), cumple | 99,79 % → 99,97 % | Ninguna |
 | F-QS5 con vía: C1 más enclavamiento y concentrador | 99,68 % (28,0 h/año), no cumple | 99,86 % (12,3 h/año), no cumple | No calculado → 99,86 % (§8.3) | La Entrega 2 solo calculó el «después» de esta variante. El concentrador aporta el 71 % de la indisponibilidad restante |
 | F-QS7: ráfaga de pedidos de vagones | 1.400 ms, no cumple | 215 ms, cumple | ≥ 1.150 ms → 215 ms | En el «antes», la Entrega 2 reportó una cota inferior: solo reservas-ms. El modelo suma los tres servicios en serie (1.240,5 ms de la cola al p99,3 + 50 + 50) y el traductor (60 ms) |
@@ -301,8 +322,19 @@ Los análisis completos están en el Anexo B y en `out/`. Las vistas generadas e
 - **SoS-QS1, medidas M1, M2 y M3.**
   - M1 se cumple por regla (P5), sin un cálculo que componer.
   - M2 es un error de estimación que evalúa Coordinación Nacional.
-  - M3 se podría escribir con `percentile`, pero sus tramos son de Carretera y Coordinación Nacional,
-    y `sos.arch`, escrito en el lenguaje base, no lo incluye.
+  - M3 es una suma que se podría escribir con presupuestos (30 + 10 + 15 = 55 s), pero `percentile`
+    asigna 0,1 % de excedencia por tramo (A9) y M3 acordó 0,3 % (p99,7): reproduciría la cifra, no su
+    composición. El lenguaje necesitaría una excedencia por tramo. Además, sus tramos son de Carretera
+    y Coordinación Nacional, y `sos.arch`, escrito en el lenguaje base, no lo incluye.
+- **Medidas de escenarios que sí se analizan.** De F-QS2, F-QS4, F-QS5 y F-QS7 se calcula una medida,
+  pero otras quedan fuera:
+  - «0 rutas sobre estado viejo» (F-QS2), «0 falsos aceptados» (F-QS4) y «0 solicitudes sin respuesta»
+    (F-QS7) dependen del comportamiento. El lenguaje necesitaría describir reglas, no solo estructura
+    y tiempos.
+  - La toma de control de 2,5 s (F-QS5) es una suma que se podría escribir con presupuestos, pero el
+    modelo no representa ese mecanismo (convención 10).
+  - El tope de 660 ms de F-QS7 (Entrega 2, §8.2) depende de timeouts y reintentos, que el lenguaje no
+    tiene.
 - **Cola de telemetría (F-QS3).** La Entrega 2 calcula 30.600 eventos acumulados y unos 160 s de
   drenaje. El lenguaje modela una cola por componente, la del canal crítico, sin rezago ni canales con
   prioridad. Necesitaría un `backlog` y colas por canal.

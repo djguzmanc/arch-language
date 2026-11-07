@@ -26,6 +26,28 @@ def _is_queue(element):
     return bool(getattr(element, 'capacity', 0))
 
 
+def _cycle(graph):
+    """A cycle of a directed graph {node: {next: ...}} as a list of nodes, or None."""
+    done = set()
+
+    def visit(node, path):
+        for following in graph.get(node, {}):
+            if following in path:
+                return path[path.index(following):] + [following]
+            if following not in done:
+                found = visit(following, path + [following])
+                if found:
+                    return found
+        done.add(node)
+        return None
+
+    for start in graph:
+        found = None if start in done else visit(start, [start])
+        if found:
+            return found
+    return None
+
+
 def check_model(model):
     components = [e for e in model.elements if e.__class__.__name__ == 'Component']
     connectors = [e for e in model.elements if e.__class__.__name__ == 'Connector']
@@ -54,34 +76,57 @@ def check_model(model):
                 _error(f'{c.name}: data store shared by {sorted(users)}', c)
 
     # C6 [F]. Hierarchical style of the Rail system (Delivery 1, section 5): authority flows
-    # down from a single commander. Every component receives control commands from one source
-    # only, across all connectors (C2 checks it within one connector).
-    commanders = {}
-    for k in connectors:
-        if 'control_command' in k.natures:
-            for link in k.links:
-                commanders.setdefault(link.path[-1].name, {}).setdefault(link.path[0].name, k)
+    # down from a single commander. Across all connectors (C2 checks one connector only):
+    #   a) a component receives control commands from one source, also when it relays them;
+    #   b) a command never goes up the tiers, from its source to its final target;
+    #   c) control commands form no cycle.
+    commands = [(k, link) for k in connectors if 'control_command' in k.natures for link in k.links]
+    commanders, authority = {}, {}
+    for k, link in commands:
+        for c in link.path[1:]:
+            commanders.setdefault(c.name, {}).setdefault(link.path[0].name, k)
+            authority.setdefault(link.path[0].name, {}).setdefault(c.name, k)
     for target, sources in commanders.items():
         if len(sources) > 1:
             names = sorted(k.name for k in sources.values())
             _error(f'{target} receives control commands from several sources {sorted(sources)} '
                    f'through {names}', list(sources.values())[-1])
+    for k, link in commands:
+        source, target = link.path[0], link.path[-1]
+        if target.tier < source.tier:
+            _error(f'{k.name}: {source.name} ({source.tier}) commands {target.name} '
+                   f'({target.tier}), up the tiers', k)
+    cycle = _cycle(authority)
+    if cycle:
+        k = authority[cycle[-2]][cycle[-1]]
+        _error(f'{k.name}: control commands form a cycle {" -> ".join(cycle)}', k)
 
-    # C7 [F]. Constituent gateway with anti-corruption layer (Delivery 1, sections 4.3 and 6):
-    # in a constituent that declares a translator, the gateway is the component that touches
-    # another constituent, and every component of its own constituent next to it on any link
-    # is the translator.
+    # C7 [F]. Constituent gateway with anti-corruption layer (Delivery 1, sections 4.3, 6 and 7):
+    # in a constituent that declares a translator, a single component touches other
+    # constituents, the gateway; it is not the translator, and every component of its own
+    # constituent next to it on any link is the translator.
     with_translator = {c.system.name for c in components if c.translator}
-    gateways = set()
+    crossing = {}
     for k in connectors:
         for link in k.links:
             for a, b in zip(link.path, link.path[1:]):
                 if a.system is not b.system:
-                    gateways.update({a.name, b.name})
+                    for c in (a, b):
+                        if c.system.name in with_translator:
+                            crossing.setdefault(c.system.name, {}).setdefault(c.name, (c, k))
+    gateways = set()
+    for system, found in crossing.items():
+        if len(found) > 1:
+            _error(f'{system}: components {sorted(found)} cross its boundary; only its gateway may',
+                   list(found.values())[-1][1])
+        c, k = next(iter(found.values()))
+        if c.translator:
+            _error(f'{k.name}: the translator {c.name} crosses the boundary; only the gateway may', k)
+        gateways.add(c.name)
     for k in connectors:
         for link in k.links:
             for i, c in enumerate(link.path):
-                if c.name in gateways and c.system.name in with_translator and not c.translator:
+                if c.name in gateways:
                     neighbours = link.path[max(i - 1, 0):i] + link.path[i + 1:i + 2]
                     for n in neighbours:
                         if n.system is c.system and not n.translator:
@@ -124,7 +169,8 @@ def check_model(model):
         if a.metric == 'latency' and queues and not a.percentile:
             _error(f'{a.name}: a chain with queues needs a percentile', a)
         if a.percentile:
-            room = (100 - a.percentile) - fixed * FIXED_EXCEEDANCE
+            # Rounded: 100 - 99.9 is not exactly 0.1 in floating point.
+            room = round((100 - a.percentile) - fixed * FIXED_EXCEEDANCE, 9)
             if room < 0 or (queues and room <= 0):
                 _error(f'{a.name}: {fixed} fixed stages leave no exceedance for '
                        f'p{a.percentile:g}', a)

@@ -21,6 +21,27 @@ CASES = {
         'connector F_K1x nature control_command coupling blocking\n'
         '  carries "Solicitudes de ruta desde la consola"\n'
         '  : CCF -> ILK'),
+    # C6: the interlocking commands planning, against the flow of authority.
+    'c6-cycle.arch': (
+        'connector F_K1 nature dependency coupling blocking\n'
+        '  carries "Órdenes de planificación y despacho, y consultas de estado"\n'
+        '  : CCF -> PLN',
+        'connector F_K1 nature dependency coupling blocking\n'
+        '  carries "Órdenes de planificación y despacho, y consultas de estado"\n'
+        '  : CCF -> PLN\n'
+        '// Ill-formed (C6): the interlocking orders planning, which already commands it (F-K5)\n'
+        'connector F_K6x nature control_command coupling blocking\n'
+        '  carries "Órdenes del enclavamiento a planificación"\n'
+        '  : ILK -> PLN'),
+    # C7: the translator skips the gateway and crosses the boundary itself.
+    'c7-boundary.arch': (
+        '// Global connectors of the Rail Gateway (as in sos.arch)\n',
+        '// Ill-formed (C7): the translator publishes directly to another constituent\n'
+        'connector F_K21x nature event_notification coupling sink\n'
+        '  carries "Eventos canónicos publicados sin pasar por el gateway"\n'
+        '  agreement "Semántica de custodia; clave transferId (P8)"\n'
+        '  : TRAD -> NCG\n\n'
+        '// Global connectors of the Rail Gateway (as in sos.arch)\n'),
     # C7: an internal service reaches the gateway without the translator.
     'c7-acl.arch': (
         'connector F_K25a nature dependency coupling blocking\n'
