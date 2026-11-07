@@ -1,0 +1,419 @@
+// Model (M1) of the CPMS: structure of Delivery 1, properties of Delivery 2
+//
+// Sources: Delivery 1 (components 4.2, internal connectors A-K1..A-K88 in 4.3,
+// global connectors in 3.3 and 4.4) and Delivery 2 (coupling 4.1, load
+// assumptions L1..L24 in 4.3).
+//
+// Conventions:
+//  - Internal components keep the identifier of Delivery 1 (T1.1 .. T5.10).
+//  - The boundary components are written with the names they will have in
+//    sos.arch (CGW is T2.1; the others are the gateways of the neighbours).
+//  - Connectors keep their identifiers: A-K1..A-K88 and SoS-K..., with the
+//    request/response pairs "a"/"b".
+//  - Rates are per second; availability in %. Values marked (illustrative)
+//    are those of Delivery 2.
+
+system CPMS
+
+constituent CPS "Sistema de Gestión de Puertos del Caribe" owner "Operadores portuarios de la costa Caribe"
+constituent RTS "Sistema de Transporte Carretero" owner "Empresas transportadoras y operadores de flotas"
+constituent RLS "Sistema de Transporte Férreo" owner "Concesionarios férreos"
+constituent FTS "Sistema de Transporte Fluvial" owner "Operadores de navegación fluvial"
+constituent NCS "Sistema de Coordinación Nacional" owner "Autoridad nacional (transporte, aduanas y control)"
+
+// T1 — Presentación
+component T1.1 "T1.1 Panel de control operativo"            in CPS tier T1 kind software
+component T1.2 "T1.2 Consola de planificación"              in CPS tier T1 kind software
+component T1.3 "T1.3 Portal de agentes y transportistas"    in CPS tier T1 kind software
+component T1.4 "T1.4 Terminal de cabina de equipos"         in CPS tier T1 kind hardware_software
+component T1.5 "T1.5 Kiosco de portería"                    in CPS tier T1 kind hardware_software
+component T1.6 "T1.6 Consola de inspección"                 in CPS tier T1 kind software
+
+// T2 — Comunicación (L9: 99.95; L10: T2.5 99.9). T2.5 absorbs 10 events/s per
+// instance (L2); the load is L2 x L8 (growth x2) = 20 events/s.
+component CGW "Caribbean Port Gateway"                   in CPS tier T2 kind software availability 99.95 latency 300000
+component T2.2 "T2.2 Broker de eventos interno"              in CPS tier T2 kind software availability 99.95
+component T2.3 "T2.3 Adaptador de navieras y agentes"        in CPS tier T2 kind software availability 99.95
+component T2.4 "T2.4 Adaptador de equipos del terminal"      in CPS tier T2 kind hardware_software availability 99.95
+component T2.5 "T2.5 Gateway IoT de campo"                   in CPS tier T2 kind hardware availability 99.90 event_capacity 10 event_load 20
+component T2.6 "T2.6 Receptor AIS de buques"                 in CPS tier T2 kind hardware availability 99.95
+component T2.7 "T2.7 Backend para clientes externos (BFF)"   in CPS tier T2 kind software availability 99.95
+
+// T3 — Lógica (L9: 99.95)
+component T3.1  "T3.1 Gestión de escalas"                    in CPS tier T3 kind software availability 99.95
+component T3.2  "T3.2 Asignación de atraque"                 in CPS tier T3 kind software availability 99.95
+component T3.3  "T3.3 Planificación de grúas de muelle"      in CPS tier T3 kind software availability 99.95
+component T3.4  "T3.4 Gestión de patio"                      in CPS tier T3 kind software availability 99.95
+component T3.5  "T3.5 Despacho de transporte interno"        in CPS tier T3 kind software availability 99.95
+component T3.6  "T3.6 Gestión de portería y citas"           in CPS tier T3 kind software availability 99.95
+component T3.7  "T3.7 Gestión de unidades de carga"          in CPS tier T3 kind software availability 99.95
+component T3.8  "T3.8 Custodia y transferencia"              in CPS tier T3 kind software availability 99.95
+component T3.9  "T3.9 Estado aduanero y retenciones"         in CPS tier T3 kind software availability 99.95
+component T3.10 "T3.10 Coordinador de operaciones del terminal" in CPS tier T3 kind software availability 99.95
+component T3.11 "T3.11 Seguridad y control de acceso"        in CPS tier T3 kind software availability 99.95
+component T3.12 "T3.12 Planificación intermodal"             in CPS tier T3 kind software availability 99.95
+
+// T4 — Datos
+component T4.1 "T4.1 BD de unidades de carga"                in CPS tier T4 kind software
+component T4.2 "T4.2 BD de escalas y atraques"               in CPS tier T4 kind software
+component T4.3 "T4.3 BD de citas"                            in CPS tier T4 kind software
+component T4.4 "T4.4 Registro de custodia"                   in CPS tier T4 kind software
+component T4.5 "T4.5 Repositorio documental"                 in CPS tier T4 kind software
+component T4.6 "T4.6 BD de ocupación de patio"               in CPS tier T4 kind software
+component T4.7 "T4.7 BD de retenciones"                      in CPS tier T4 kind software
+component T4.8 "T4.8 Histórico de eventos"                   in CPS tier T4 kind software
+component T4.9 "T4.9 BD de permisos de acceso"               in CPS tier T4 kind software
+
+// T5 — Físico (L10: 99.9)
+component T5.1  "T5.1 Grúas de muelle"                       in CPS tier T5 kind physical availability 99.90
+component T5.2  "T5.2 Grúas de patio"                        in CPS tier T5 kind physical availability 99.90
+component T5.3  "T5.3 Vehículos de transporte interno"       in CPS tier T5 kind physical availability 99.90
+component T5.4  "T5.4 Carriles y barreras de portería"       in CPS tier T5 kind physical availability 99.90
+component T5.5  "T5.5 Básculas de camiones"                  in CPS tier T5 kind physical availability 99.90
+component T5.6  "T5.6 Lectores OCR/RFID"                     in CPS tier T5 kind hardware availability 99.90
+component T5.7  "T5.7 Sensores de patio y refrigerados"      in CPS tier T5 kind hardware availability 99.90
+component T5.8  "T5.8 Computadores a bordo de grúas"         in CPS tier T5 kind hardware availability 99.90
+component T5.9  "T5.9 Cámaras de seguridad perimetral"       in CPS tier T5 kind hardware availability 99.90
+component T5.10 "T5.10 Computadores a bordo de vehículos"    in CPS tier T5 kind hardware availability 99.90
+
+// Boundary components of the neighbouring constituents (as in sos.arch)
+component RGW  "Road Gateway"                  in RTS tier T2 kind software latency 200000
+component LGW  "Rail Gateway"                  in RLS tier T2 kind software
+component FGW  "Fluvial Gateway"               in FTS tier T2 kind software
+component NCG   "National Coordination Gateway" in NCS  tier T2 kind software availability 99.90 latency 230000
+
+// ---------------------------------------------------------------------------
+// Internal connectors A-K1 .. A-K88 (Delivery 1, 4.3; coupling: Delivery 2, 4.1)
+// ---------------------------------------------------------------------------
+
+// Datos de campo hacia el sistema
+connector A-K1 nature data_flow coupling supply
+    carries "Placa, código de contenedor o precinto recién leídos" latency 50 : T5.6 -> T2.5
+connector A-K2 nature data_flow coupling supply
+    carries "Peso del camión y de la unidad" : T5.5 -> T2.5
+connector A-K3 nature data_flow coupling supply
+    carries "Temperatura y estado de unidades refrigeradas y del patio" : T5.7 -> T2.5
+connector A-K4 nature data_flow coupling supply
+    carries "Detecciones de las cámaras" : T5.9 -> T2.5
+connector A-K5 nature event_notification coupling sink
+    carries "Lecturas normalizadas y alarmas de campo" latency 50 : T2.5 -> T2.2
+connector A-K6 nature data_flow coupling supply
+    carries "Posición, estado y confirmación de movimientos de cada grúa" : T5.8 -> T2.4
+connector A-K7 nature data_flow coupling supply
+    carries "Posición, estado y confirmación de movimientos de cada vehículo" : T5.10 -> T2.4
+connector A-K8 nature event_notification coupling sink
+    carries "Avance de órdenes y estado de los equipos, en formato común" : T2.4 -> T2.2
+
+// Control de equipos: jerarquía y lazo de control
+connector A-K9 nature control_command coupling supply
+    carries "Movimientos internos que deben despacharse" : T3.10 -> T3.5
+connector A-K10 nature control_command coupling supply
+    carries "Órdenes de trabajo para grúas" : T3.10 -> T2.4
+connector A-K11 nature control_command coupling supply
+    carries "Asignación de movimientos a vehículos internos" : T3.5 -> T2.4
+connector A-K12 nature control_command coupling supply
+    carries "Órdenes de grúa traducidas al lenguaje del equipo (autoridad: T3.10)" : T2.4 -> T5.8
+connector A-K13 nature control_command coupling supply
+    carries "Órdenes de vehículo traducidas al lenguaje del equipo (autoridad: T3.5)" : T2.4 -> T5.10
+connector A-K14 nature control_command coupling supply
+    carries "Accionamiento de izaje y traslación de la grúa de muelle; parada" : T5.8 -> T5.1
+connector A-K15 nature data_flow coupling supply
+    carries "Posición, carga y límites medidos en la grúa de muelle" : T5.1 -> T5.8
+connector A-K16 nature control_command coupling supply
+    carries "Accionamiento de izaje y traslación de la grúa de patio; parada" : T5.8 -> T5.2
+connector A-K17 nature data_flow coupling supply
+    carries "Posición, carga y límites medidos en la grúa de patio" : T5.2 -> T5.8
+connector A-K18 nature control_command coupling supply
+    carries "Accionamiento de tracción, dirección y frenado del vehículo" : T5.10 -> T5.3
+connector A-K19 nature data_flow coupling supply
+    carries "Posición y velocidad medidas del vehículo" : T5.3 -> T5.10
+connector A-K20 nature data_flow coupling supply
+    carries "Órdenes que debe ver el operador" : T2.4 -> T1.4
+connector A-K21 nature data_flow coupling supply
+    carries "Confirmaciones e incidentes reportados por el operador" : T1.4 -> T2.4
+
+// Distribución de eventos internos
+connector A-K22 nature event_notification coupling supply
+    carries "Hechos de portería: lectura de placa, peso, llegada de camión" latency 50 : T2.2 -> T3.6
+connector A-K23 nature event_notification coupling supply
+    carries "Hechos de patio y de unidades refrigeradas" : T2.2 -> T3.4
+connector A-K24 nature event_notification coupling supply
+    carries "Avance de órdenes y estado de los equipos" : T2.2 -> T3.10
+connector A-K25 nature event_notification coupling supply
+    carries "Hechos de acceso y de seguridad perimetral" : T2.2 -> T3.11
+connector A-K26 nature event_notification coupling sink
+    carries "Todos los eventos operativos, para el histórico" : T2.2 -> T4.8
+connector A-K27 nature event_notification coupling sink
+    carries "Eventos en tiempo real para el panel" : T2.2 -> T1.1
+
+// Escalas, atraque y planificación
+connector A-K28 nature event_notification coupling supply
+    carries "Posición y aproximación de buques" : T2.6 -> T3.1
+connector A-K29 nature data_flow coupling supply
+    carries "Preaviso de escala, manifiesto e instrucciones de naviera o agente" : T2.3 -> T3.1
+connector A-K30 nature dependency coupling blocking
+    carries "Solicitud de atraque para una escala" : T3.1 -> T3.2
+connector A-K31 nature data_flow coupling supply
+    carries "Muelle y ventana asignados" : T3.2 -> T3.1
+connector A-K32 nature data_flow coupling supply
+    carries "Ventana de atraque para planificar grúas" : T3.2 -> T3.3
+connector A-K33 nature data_flow coupling supply
+    carries "Plan de grúas y secuencia de carga y descarga" : T3.3 -> T3.10
+connector A-K34 nature data_flow coupling supply
+    carries "Plan de patio: posición destino de cada unidad" : T3.4 -> T3.10
+connector A-K35 nature control_command coupling supply
+    carries "Ajustes manuales del planificador al plan de atraque" : T1.2 -> T3.2
+connector A-K36 nature control_command coupling supply
+    carries "Ajustes manuales del planificador al plan de patio" : T1.2 -> T3.4
+connector A-K37 nature data_flow coupling supply
+    carries "Propuesta de atraque y ocupación de muelles, para revisión" : T3.2 -> T1.2
+connector A-K38 nature data_flow coupling supply
+    carries "Unidades declaradas en el manifiesto (alta de unidades)" : T3.1 -> T3.7
+
+// Unidades, portería, aduana y custodia
+connector A-K39 nature event_notification coupling supply
+    carries "Entrada o salida de una unidad por portería" : T3.6 -> T3.7
+connector A-K40 nature event_notification coupling supply
+    carries "Unidad que requiere posición en patio" : T3.7 -> T3.4
+connector A-K41 nature data_flow coupling supply
+    carries "Posición de patio asignada a la unidad" : T3.4 -> T3.7
+connector A-K42 nature dependency coupling blocking
+    carries "Consulta del estado aduanero de una unidad en portería" : T3.6 -> T3.9
+connector A-K43 nature data_flow coupling supply
+    carries "Respuesta: unidad liberada o retenida" : T3.9 -> T3.6
+connector A-K44 nature data_flow coupling supply
+    carries "Ejecución y resultado de inspección física en puerto" : T1.6 -> T3.9
+connector A-K45 nature event_notification coupling supply
+    carries "Estado aduanero aplicado a la unidad" : T3.9 -> T3.7
+connector A-K46 nature event_notification coupling supply
+    carries "Entrega o recepción física en portería que genera cambio de custodia" : T3.6 -> T3.8
+connector A-K47 nature data_flow coupling supply
+    carries "Permisos de acceso vigentes" : T3.11 -> T3.6
+connector A-K48 nature control_command coupling supply
+    carries "Abrir o cerrar barrera" : T3.6 -> T2.5
+connector A-K49 nature control_command coupling supply
+    carries "Orden de apertura o cierre enviada a la barrera" : T2.5 -> T5.4
+connector A-K50 nature event_notification coupling supply
+    carries "Carga o descarga de tren, barcaza o buque completada" : T3.10 -> T3.8
+connector A-K51 nature event_notification coupling supply
+    carries "Unidades liberadas listas para evacuación intermodal" : T3.7 -> T3.12
+
+// Portal y kiosco para clientes externos
+connector A-K52 nature dependency coupling blocking
+    carries "Solicitudes de cita y consultas" : T1.3 -> T2.7
+connector A-K53 nature dependency coupling blocking
+    carries "Petición de cita o consulta hacia portería" : T2.7 -> T3.6
+connector A-K54 nature data_flow coupling supply
+    carries "Resultado de la cita o consulta" : T3.6 -> T2.7
+connector A-K55 nature data_flow coupling supply
+    carries "Respuesta adaptada al portal" : T2.7 -> T1.3
+connector A-K56 nature dependency coupling blocking
+    carries "Registro de llegada del conductor" : T1.5 -> T2.7
+connector A-K57 nature data_flow coupling supply
+    carries "Instrucciones de carril y turno" : T2.7 -> T1.5
+
+// Almacenes privados (un dueño por almacén)
+connector A-K58 nature dependency coupling blocking
+    carries "Estado, posición y documentos de las unidades" : T3.7 -> T4.1
+connector A-K59 nature dependency coupling blocking
+    carries "Escalas y plan de atraque vigente" : T3.1 -> T4.2
+connector A-K60 nature dependency coupling blocking
+    carries "Citas de portería" : T3.6 -> T4.3
+connector A-K61 nature dependency coupling blocking
+    carries "Registros de cambio de custodia" : T3.8 -> T4.4
+connector A-K62 nature dependency coupling blocking
+    carries "Manifiestos y documentos de la escala" : T3.1 -> T4.5
+connector A-K63 nature dependency coupling blocking
+    carries "Ocupación y reservas de patio" : T3.4 -> T4.6
+connector A-K64 nature dependency coupling blocking
+    carries "Retenciones y liberaciones" : T3.9 -> T4.7
+connector A-K65 nature dependency coupling blocking
+    carries "Permisos de personas y vehículos" : T3.11 -> T4.9
+
+// Planificación intermodal (interna)
+connector A-K66 nature dependency coupling blocking
+    carries "Reserva de zona de patio para convoy o barcaza" : T3.12 -> T3.4
+connector A-K67 nature data_flow coupling supply
+    carries "Zona y punto de patio reservados" : T3.4 -> T3.12
+connector A-K68 nature data_flow coupling supply
+    carries "Ventanas de cargue y descargue acordadas con otros modos" : T3.12 -> T3.10
+connector A-K69 nature data_flow coupling supply
+    carries "Citas de retiro acordadas con transportadores" : T3.12 -> T3.6
+
+// Frontera: gateway <-> componentes internos (each one serves exactly one SoS-K)
+connector A-K70 nature dependency coupling blocking
+    carries "Solicitud de cita de camión recibida (SoS_K1a)" : CGW -> T3.6
+connector A-K71 nature data_flow coupling supply
+    carries "Confirmación o rechazo de la cita (SoS_K1b)" : T3.6 -> CGW
+connector A-K72 nature dependency coupling blocking
+    carries "Solicitud de muelle de transferencia para barcaza (SoS_K10a)" : CGW -> T3.2
+connector A-K73 nature data_flow coupling supply
+    carries "Muelle y ventana asignados a la barcaza (SoS_K10b)" : T3.2 -> CGW
+connector A-K74 nature event_notification coupling sink
+    carries "Arribo/zarpe de buque y manifiesto (SoS_K11)" : T3.1 -> CGW
+connector A-K75 nature dependency coupling blocking
+    carries "Solicitud de validación de levante (SoS_K12a)" : T3.9 -> CGW
+connector A-K76 nature data_flow coupling supply
+    carries "Estado de levante recibido (SoS_K12b)" : CGW -> T3.9
+connector A-K77 nature dependency coupling blocking
+    carries "Consulta de estado consolidado, verificación de la contraparte (SoS_K21a)" : T3.8 -> CGW
+connector A-K78 nature data_flow coupling supply
+    carries "Estado consolidado recibido (SoS_K21b)" : CGW -> T3.8
+connector A-K79 nature dependency coupling blocking
+    carries "Unidades listas y solicitud de vagones (SoS_K24a)" : T3.12 -> CGW
+connector A-K80 nature data_flow coupling supply
+    carries "Confirmación de convoy y ventana de cargue (SoS_K24b)" : CGW -> T3.12
+connector A-K81 nature dependency coupling blocking
+    carries "Aviso de convoy de exportación y solicitud de zona (SoS_K25a)" : CGW -> T3.12
+connector A-K82 nature data_flow coupling supply
+    carries "Zona, punto y ventana de descargue asignados (SoS_K25b)" : T3.12 -> CGW
+connector A-K83 nature dependency coupling blocking
+    carries "Solicitud de capacidad de camiones para retiro (SoS_K26a)" : T3.12 -> CGW
+connector A-K84 nature data_flow coupling supply
+    carries "Vehículos y cita de retiro confirmados, o rechazo (SoS_K26b)" : CGW -> T3.12
+connector A-K85 nature event_notification coupling sink
+    carries "Custodia recibida por el puerto (SoS_K29)" : T3.8 -> CGW
+connector A-K86 nature dependency coupling blocking
+    carries "Unidades listas y solicitud de capacidad fluvial (SoS_K31a)" : T3.12 -> CGW
+connector A-K87 nature data_flow coupling supply
+    carries "Barcazas, muelle y ventana confirmados, o rechazo (SoS_K31b)" : CGW -> T3.12
+connector A-K88 nature event_notification coupling supply
+    carries "Cambio de levante recibido (SoS_K32)" : CGW -> T3.9
+
+// ---------------------------------------------------------------------------
+// Global connectors in which the CPMS takes part (Delivery 1, 3.3 and 4.4).
+// Availability of the link between constituents: L11 (99.95).
+// ---------------------------------------------------------------------------
+
+connector SoS_K1a nature dependency coupling blocking
+    carries "Solicitud de cita portuaria y programación de camión y conductor"
+    agreement "Contrato de citas portuarias (v1)" availability 99.95
+    : RGW -> T3.6
+connector SoS_K1b nature data_flow coupling blocking
+    carries "Confirmación de cita, ventana horaria y carril, o rechazo"
+    agreement "Contrato de citas portuarias (v1)" availability 99.95
+    : CGW -> RGW
+connector SoS_K10a nature dependency coupling blocking
+    carries "Arribo de barcaza y solicitud de muelle de transferencia"
+    agreement "Contrato de transferencia puerto-barcaza (v1, v2)" availability 99.95
+    : FGW -> CGW
+connector SoS_K10b nature data_flow coupling blocking
+    carries "Asignación de muelle de transferencia y ventana, o rechazo"
+    agreement "Contrato de transferencia puerto-barcaza (v1, v2)" availability 99.95
+    : CGW -> FGW
+connector SoS_K11 nature event_notification coupling sink
+    carries "Arribo/zarpe de motonave y manifiesto en puertos del Caribe"
+    agreement "Aviso de arribo y manifiesto (v1)" availability 99.95
+    : CGW -> NCG
+connector SoS_K12a nature dependency coupling blocking
+    carries "Solicitud de validación de levante previa a la salida por portería"
+    agreement "Contrato de levante aduanero (v1)" availability 99.95
+    : CGW -> NCG
+connector SoS_K12b nature data_flow coupling blocking
+    carries "Estado de levante: concedido, inspección requerida o retenido"
+    agreement "Contrato de levante aduanero (v1)" availability 99.95
+    : NCG -> CGW
+// P7: maximum 2 queries/s during degradation; 1.5 queries/s scheduled (L22).
+connector SoS_K21a nature dependency coupling blocking
+    carries "Consulta de estado consolidado de la carga en la que participa el operador portuario"
+    agreement "Contrato de estado consolidado; regla de acceso y tasa P7"
+    availability 99.95 event_capacity 2 event_load 1.5
+    : CGW -> NCG
+connector SoS_K21b nature data_flow coupling blocking
+    carries "Estado consolidado limitado a su carga; v3: posición y ETA estimadas"
+    agreement "Contrato de estado consolidado; regla de acceso y tasa P7" availability 99.95
+    : NCG -> CGW
+connector SoS_K24a nature dependency coupling blocking
+    carries "Unidades listas para transferencia patio-tren y solicitud de vagones"
+    agreement "Contrato de transferencia puerto-tren (v1)" availability 99.95
+    : CGW -> LGW
+connector SoS_K24b nature data_flow coupling blocking
+    carries "Confirmación de convoy, capacidad, plataforma y ventana, o rechazo"
+    agreement "Contrato de transferencia puerto-tren (v1)" availability 99.95
+    : LGW -> CGW
+connector SoS_K25a nature dependency coupling blocking
+    carries "Aviso de convoy de exportación y solicitud de zona y ventana de descargue"
+    agreement "Contrato de transferencia puerto-tren (v1)" availability 99.95
+    : LGW -> CGW
+connector SoS_K25b nature data_flow coupling blocking
+    carries "Zona de patio, punto y ventana de descargue, o rechazo"
+    agreement "Contrato de transferencia puerto-tren (v1)" availability 99.95
+    : CGW -> LGW
+connector SoS_K26a nature dependency coupling blocking
+    carries "Solicitud de camiones para retirar unidades liberadas en el Caribe"
+    agreement "Contrato de retiro por camión (v1)" availability 99.95
+    : CGW -> RGW
+connector SoS_K26b nature data_flow coupling blocking
+    carries "Vehículos asignados y cita de retiro, o rechazo"
+    agreement "Contrato de retiro por camión (v1)" availability 99.95
+    : RGW -> CGW
+connector SoS_K29 nature event_notification coupling sink
+    carries "Custodia recibida por el puerto del Caribe"
+    agreement "Semántica de custodia; clave transferId (P8)" availability 99.95
+    : CGW -> NCG
+connector SoS_K31a nature dependency coupling blocking
+    carries "Unidades liberadas para transferencia patio-barcaza y solicitud de capacidad"
+    agreement "Contrato de transferencia puerto-barcaza (v1, v2)" availability 99.95
+    : CGW -> FGW
+connector SoS_K31b nature data_flow coupling blocking
+    carries "Barcazas asignadas, muelle y ventana de cargue, o rechazo"
+    agreement "Contrato de transferencia puerto-barcaza (v1, v2)" availability 99.95
+    : FGW -> CGW
+connector SoS_K32 nature event_notification coupling sink
+    carries "Cambio de levante en puertos del Caribe; v3: estado de servicio"
+    agreement "Aviso de levante y de estado de servicio (v2, P2)" availability 99.95 latency 10000
+    : NCG -> CGW
+
+// Context from sos.arch: stage 2 of SoS-QS1 (M4), between two neighbouring gateways.
+connector SoS_K5 nature event_notification coupling sink
+    carries "Custodia recibida por el transportador; v3: ETA al despachar"
+    agreement "Semántica de custodia; clave transferId (P8)"
+    latency 40000
+    : RGW -> NCG
+
+// ---------------------------------------------------------------------------
+// Analyses (Delivery 2)
+// ---------------------------------------------------------------------------
+
+// A-QS2, chain C1 (exit through the gate), structure of Delivery 1: one instance of
+// T3.6, T3.9 and T2.1; the exit waits for the link SoS_K12a (L11) and the NCS (L10).
+// Delivery 2 gives no target; 99.9 is assumed.
+analysis ExitAvailability scenario "A-QS2" availability target 99.9 :
+    T3.6, T3.9, CGW, SoS_K12a, NCG
+
+// Same chain with the pairs that Delivery 2 (4.4, A-QS2 "before") already assumes:
+// T3.6, T3.9 and T2.1 as redundant pairs with beta = 5 % (L16). Reproduces the 99.84 %
+// stated there (Delivery 1 has a single instance, see VALIDACION.md).
+analysis ExitAvailabilityD2Before scenario "A-QS2 (D2 before)" availability target 99.9 :
+    T3.6 replicas 2 beta 0.05, T3.9 replicas 2 beta 0.05, CGW replicas 2 beta 0.05,
+    SoS_K12a, NCG
+
+// A-QS4: field events doubled (L2 x L8 = 20 events/s) on T2.5, which absorbs
+// 10 events/s per instance and does not scale horizontally (1 instance).
+analysis FieldEventLoad scenario "A-QS4" utilization target 100 :
+    T2.5
+
+// A-QS6: scheduled queries to the NCS, 90 trucks every P = 60 s (L21, L22)
+// against the maximum rate of the agreement (P7).
+analysis ConsolidatedStateQueries scenario "A-QS6" utilization target 100 :
+    SoS_K21a
+
+// A-QS4, response measure of Delivery 2: reading -> T3.6 <= 200 ms (p99) at 20 events/s.
+// Path T5.6 -> T2.5 -> T2.2 -> T3.6 (A-K1, A-K5, A-K22), 50 ms p99 per internal hop (L14).
+// The sum only holds if T2.5 is not saturated: see FieldEventLoad (utilization).
+analysis FieldEventLatency scenario "A-QS4 (latency)" latency target 200 :
+    A-K1, A-K5, A-K22
+
+// A-QS6, response measure of Delivery 2: the port reconciles the 120 affected appointments
+// (L23) in <= 300 s after "restablecido". At 2 queries/s (P7): 60 s; 120 s if every query
+// needs its single retry (L24). Metric deadline (as in the models of team D): budgets in seconds.
+analysis PortReconciliation scenario "A-QS6 (reconciliation)" deadline target 300 :
+    CGW = 60
+analysis PortReconciliationRetry scenario "A-QS6 (reconciliation, one retry per query)" deadline target 300 :
+    CGW = 120
+
+// SoS-QS1, measure M4 (Delivery 2, 3.6.6), same analysis as sos.arch; budgets in ms.
+//   RGW 200 s recovers and re-sends; SoS_K5 40 s; NCG 230 s consolidates;
+//   SoS_K32 10 s "restablecido" notice; CGW 300 s reconciliation (Delivery 2: 780 s <= 900 s).
+analysis SoSQS1M4 scenario "SoS-QS1 (M4)" latency target 900000 :
+    RGW, SoS_K5, NCG, SoS_K32, CGW

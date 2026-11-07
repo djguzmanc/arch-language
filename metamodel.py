@@ -19,6 +19,15 @@ def _singles(factor):
     return factor.members if factor.__class__.__name__ == 'Group' else [factor]
 
 
+# [A] The styles of the Caribbean Port (C9, C10) are checked only inside its constituent:
+# a style is attributed to a delimited part of the structure, not to the whole SoS.
+CPMS = 'CPS'
+
+
+def _inside(connector, constituent):
+    return all(c.system.name == constituent for link in connector.links for c in link.path)
+
+
 def check_model(model):
     components = [e for e in model.elements if e.__class__.__name__ == 'Component']
     connectors = [e for e in model.elements if e.__class__.__name__ == 'Connector']
@@ -46,6 +55,19 @@ def check_model(model):
         # never crosses a boundary; authority exists only inside one constituent.
         if 'control_command' in k.natures and _boundary(k):
             _error(f'{k.name}: control command crosses the boundary of a constituent', k)
+        # C8 [A]. Gateway pattern (CPMS, Delivery 1 sections 3.2 and 3.5): every link that
+        # crosses a boundary starts and ends at a boundary component of tier T2.
+        for link in k.links:
+            for a, b in zip(link.path, link.path[1:]):
+                if a.system is not b.system and (a.tier != 'T2' or b.tier != 'T2'):
+                    bad = a if a.tier != 'T2' else b
+                    _error(f'{k.name}: boundary link reaches {bad.name} (tier {bad.tier}); '
+                           f'only T2 boundary components may face another constituent', k)
+        # C10 [A]. Event-based style of the CPMS (Delivery 1): inside the port, a
+        # notification is published without waiting for the consumer, so it is never blocking.
+        if _inside(k, CPMS) and 'event_notification' in k.natures and k.coupling == 'blocking':
+            _error(f'{k.name}: event notification with blocking coupling '
+                   f'(the publisher must not wait for the consumer)', k)
 
     # C4 [D, adapted]. A data store (T4) is accessed by dependency only from components
     # of its own domain. A store without domain keeps the rule of Laboratory 4:
@@ -62,6 +84,18 @@ def check_model(model):
             elif len({u.name for u in users}) > 1:
                 _error(f'{c.name}: data store shared by {sorted({u.name for u in users})}', c)
 
+    # C9 [A]. Hierarchical style and control loop of the CPMS (Delivery 1 section 5.2): a
+    # piece of physical equipment (T5) of the port receives control commands from a single
+    # component.
+    for c in components:
+        if c.tier == 'T5' and c.system.name == CPMS:
+            authorities = {link.path[-2].name
+                           for k in connectors if 'control_command' in k.natures
+                           for link in k.links if link.path[-1] is c}
+            if len(authorities) > 1:
+                _error(f'{c.name}: equipment commanded by several authorities '
+                       f'{sorted(authorities)}', c)
+
     # C5 [D, extended]. Every factor of an analysis carries the property the analysis needs
     # (an optional number that is not written takes the value 0).
     for a in model.analyses:
@@ -70,8 +104,13 @@ def check_model(model):
                 r = s.ref
                 if a.metric in ('availability', 'latency') and not getattr(r, a.metric):
                     _error(f'{a.name}: {r.name} has no {a.metric} property', a)
-                if a.metric == 'availability' and s.beta and (getattr(r, 'instances', 0) or 1) < 2:
+                n = s.replicas or getattr(r, 'instances', 0) or 1   # [A] replicas
+                if a.metric == 'availability' and s.beta and n < 2:
                     _error(f'{a.name}: {r.name} has beta but fewer than 2 instances', a)
+                if s.replicas and not s.beta:                       # [A]
+                    _error(f'{a.name}: {r.name} has replicas but no beta', a)
+                if a.metric == 'utilization' and (not r.event_capacity or not r.event_load):  # [A]
+                    _error(f'{a.name}: {r.name} needs event_capacity and event_load', a)
                 if a.metric == 'deadline' and not s.value:
                     _error(f'{a.name}: {r.name} has no budget (= value) for the deadline', a)
                 if a.metric == 'recovery':

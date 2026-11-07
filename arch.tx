@@ -1,5 +1,7 @@
 // Metamodel (M2) of the architecture description language for the SoS.
-// Starting point: language of Laboratory 4. Adaptations of team D are marked [D].
+// Starting point: language of Laboratory 4. Adaptations of team D are marked [D];
+// adaptations of team A (Caribbean Port, CPMS) are marked [A]. Every [A] change is an
+// addition: the models written for [D] keep their meaning.
 Model:
   'system' name=ID
   constituents+=Constituent
@@ -16,7 +18,7 @@ Element:
 ;
 
 Component:
-  'component' name=ID label=STRING
+  'component' name=Ident label=STRING       // [A] Ident (see below)
   'in' system=[Constituent]
   'tier' tier=Tier
   'kind' kind=Kind
@@ -29,18 +31,20 @@ Component:
 ;
 
 Connector:
-  'connector' name=ID
+  'connector' name=Ident                    // [A] Ident (see below)
   'nature' natures+=Nature[',']
   'coupling' coupling=Coupling
   'carries' info=STRING
   ('agreement' agreement=STRING)?
   ('availability' availability=NUMBER)?
   ('latency' latency=NUMBER)?
+  ('event_capacity' event_capacity=NUMBER)? // [A] requests or events/s the connector admits
+  ('event_load' event_load=NUMBER)?         // [A] requests or events/s it carries in the peak
   ':' links+=Link[',']
 ;
 
 Link:
-  path+=[Component]['->']
+  path+=[Component|Ident]['->']
 ;
 
 Analysis:
@@ -57,8 +61,10 @@ Factor:
 
 // [D] A factor may carry its own budget for the analysis (= value) and, for a
 // component with several instances, the common-cause fraction of its replicas.
+// [A] 'replicas n' evaluates the element as n replicas without changing its instances
+// (a hypothetical structure, e.g. the 'before' of Delivery 2 for the CPMS).
 Single:
-  ref=[Element] ('=' value=NUMBER)? ('beta' beta=NUMBER)?
+  ref=[Element|Ident] ('=' value=NUMBER)? ('replicas' replicas=INT)? ('beta' beta=NUMBER)?
 ;
 
 // [D] In availability, a group is a set of replicas with fraction beta (Lab 4).
@@ -71,7 +77,12 @@ Tier: 'T1' | 'T2' | 'T3' | 'T4' | 'T5';
 Kind: 'hardware_software' | 'hardware' | 'software' | 'physical';
 Nature: 'data_flow' | 'control_command' | 'dependency' | 'event_notification';
 Coupling: 'blocking' | 'supply' | 'sink';
-Metric: 'availability' | 'latency' | 'deadline' | 'recovery';   // [D] deadline, recovery
+Metric: 'availability' | 'latency' | 'deadline' | 'recovery'    // [D] deadline, recovery
+      | 'utilization';                                         // [A] load / (capacity x instances)
+
+// [A] Identifiers of Deliveries 1 and 2 (T2.1, A-K70, A-K85'): letters, digits and '_',
+// with '.' or '-' inside and an optional prime. Every ID of the base language is an Ident.
+Ident: /[A-Za-z][A-Za-z0-9_]*([.\-][A-Za-z0-9_]+)*'?/;
 
 Comment:
   /\/\/.*$/

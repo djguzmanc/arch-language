@@ -1,4 +1,7 @@
+import math
 import os
+import re
+from collections import Counter
 
 NATURE = {
     'data_flow': 'data flow',
@@ -18,6 +21,12 @@ def _connectors(model):
 
 def _crosses(link):
     return len({c.system.name for c in link.path}) > 1
+
+
+def _nid(name):
+    """[A] Mermaid node identifier: Ident may contain '.', '-' and a prime (T2.1, A-K85').
+    Identifiers of the base language are returned unchanged."""
+    return re.sub(r'\W', '_', name)
 
 
 def _boundary(connector):
@@ -41,7 +50,7 @@ def generate_connector_table(model, out):
         natures = ', '.join(NATURE[n] for n in k.natures).capitalize()
         lines.append(f'| {k.name} | {paths} | {natures} | {k.coupling.capitalize()} '
                      f'| {k.info} | {_boundary(k)} |')
-    with open(os.path.join(out, 'connectors.md'), 'w') as f:
+    with open(os.path.join(out, 'connectors.md'), 'w', encoding='utf-8', newline='\n') as f:
         f.write('\n'.join(lines) + '\n')
 
 
@@ -55,13 +64,13 @@ def generate_view(model, out):
         for c in _components(model):
             if c.system is s:
                 shape = f'[("{c.label} ({c.tier})")]' if c.tier == 'T4' else f'["{c.label} ({c.tier})"]'
-                lines.append(f'    {c.name}{shape}')
+                lines.append(f'    {_nid(c.name)}{shape}')
         lines.append('  end')
     for k in _connectors(model):
         for link in k.links:
             for a, b in zip(link.path, link.path[1:]):
-                lines.append(f'  {a.name} -->|{k.name}| {b.name}')
-    with open(os.path.join(out, 'view.mmd'), 'w') as f:
+                lines.append(f'  {_nid(a.name)} -->|{k.name}| {_nid(b.name)}')
+    with open(os.path.join(out, 'view.mmd'), 'w', encoding='utf-8', newline='\n') as f:
         f.write('\n'.join(lines) + '\n')
 
 
@@ -78,7 +87,7 @@ def _unavailability(factor):
     if factor.__class__.__name__ == 'Single':
         u = 1 - factor.ref.availability / 100
         if factor.beta:
-            n, b = _instances(factor.ref), factor.beta
+            n, b = factor.replicas or _instances(factor.ref), factor.beta   # [A] replicas
             return b * u + ((1 - b) * u) ** n, f'{factor.ref.name} × {n} (β = {b:g})'
         return u, factor.ref.name
     u = 1 - factor.members[0].ref.availability / 100
@@ -124,6 +133,22 @@ def analyze(analysis):
         header = ['| Stage | Budget |', '|-------|--------|']
         summary = f'Composed deadline: **{result:g} s**'
         met = round(result, 6) <= analysis.target
+    elif analysis.metric == 'utilization':
+        # [A] utilization: load / (capacity x instances) of each element; the worst one counts.
+        result = 0.0
+        for f in analysis.factors:
+            r = f.ref
+            n = _instances(r)
+            u = r.event_load / (r.event_capacity * n) * 100
+            result = max(result, u)
+            rows.append(f'| {r.name} | {r.event_load:g} | {r.event_capacity:g} | {n} | '
+                        f'{u:.0f} % | {math.ceil(r.event_load / r.event_capacity)} |')
+        header = ['| Element | Load (per s) | Capacity per instance (per s) | Instances | '
+                  'Utilization | Instances needed |',
+                  '|---------|--------------|-------------------------------|-----------|'
+                  '-------------|------------------|']
+        summary = f'Bottleneck utilization: **{result:.0f} %**'
+        met = round(result, 6) <= analysis.target
     else:
         # [D] recovery: time to absorb a backlog with the spare capacity of the consumers.
         spare = 0
@@ -149,8 +174,46 @@ def generate_analysis(model, out):
     lines = [f'# Analysis of {model.name}', '']
     for a in model.analyses:
         lines += analyze(a)
-    with open(os.path.join(out, 'analysis.md'), 'w') as f:
+    with open(os.path.join(out, 'analysis.md'), 'w', encoding='utf-8', newline='\n') as f:
         f.write('\n'.join(lines))
+
+
+# ─────────────────────────────────────────────
+# [A] Model-to-text: structural summary (reproduces the counts of Deliveries 1 and 2)
+# ─────────────────────────────────────────────
+def generate_summary(model, out):
+    comps, conns = _components(model), _connectors(model)
+    boundary = [k for k in conns if _boundary(k) != 'No']
+    internal = [k for k in conns if _boundary(k) == 'No']
+    lines = [f'# Summary of {model.name}', '',
+             f'- Constituents: {len(model.constituents)}',
+             f'- Components: {len(comps)}',
+             f'- Connectors: {len(conns)} ({len(internal)} internal, {len(boundary)} boundary)', '',
+             '## Components by constituent and tier', '',
+             '| Constituent | T1 | T2 | T3 | T4 | T5 | Total |',
+             '|-------------|----|----|----|----|----|-------|']
+    for s in model.constituents:
+        mine = [c for c in comps if c.system is s]
+        row = [sum(1 for c in mine if c.tier == t) for t in ('T1', 'T2', 'T3', 'T4', 'T5')]
+        lines.append(f'| {s.name} | ' + ' | '.join(map(str, row)) + f' | {len(mine)} |')
+    lines += ['', '## Connectors by coupling', '',
+              '| Class | Blocking | Supply | Sink | Total |',
+              '|-------|----------|--------|------|-------|']
+    for title, group in (('Internal', internal), ('Boundary (derived)', boundary)):
+        c = Counter(k.coupling for k in group)
+        lines.append(f'| {title} | {c["blocking"]} | {c["supply"]} | {c["sink"]} | {len(group)} |')
+    lines += ['', '## Connectors by nature', '',
+              '| Nature | Internal | Boundary |', '|--------|----------|----------|']
+    for n in NATURE:
+        lines.append(f'| {NATURE[n]} | {sum(1 for k in internal if n in k.natures)} | '
+                     f'{sum(1 for k in boundary if n in k.natures)} |')
+    degree = Counter(c.name for k in conns for link in k.links for c in link.path)
+    labels = {c.name: c.label for c in comps}
+    lines += ['', '## Connectors per component (top 8)', '',
+              '| Component | Connectors |', '|-----------|------------|']
+    lines += [f'| {labels[name]} | {d} |' for name, d in degree.most_common(8)]
+    with open(os.path.join(out, 'summary.md'), 'w', encoding='utf-8', newline='\n') as f:
+        f.write('\n'.join(lines) + '\n')
 
 
 def apply_transformations(model, out):
@@ -158,3 +221,4 @@ def apply_transformations(model, out):
     generate_connector_table(model, out)
     generate_view(model, out)
     generate_analysis(model, out)
+    generate_summary(model, out)   # [A]

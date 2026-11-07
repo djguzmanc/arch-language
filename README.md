@@ -4,16 +4,18 @@ Lenguaje del Laboratorio 4 adaptado por el equipo D, modelo conjunto `sos.arch` 
 modelos del NCS antes (`ncs-e1.arch`) y después (`ncs-e2.arch`) de la Entrega 2,
 transformaciones y artefactos generados.
 
+El lenguaje es común a los equipos: el equipo A (Puerto del Caribe, CPMS) le agregó sus adaptaciones, marcadas `[A]`, sin cambiar las del equipo D. Ver la sección «Equipo A» al final.
+
 ## Ejecución
 
 ```bash
 docker build -t lssa-team-d .
-docker run --rm -v "$PWD:/app" lssa-team-d                      # los tres modelos de models/
+docker run --rm -v "$PWD:/app" lssa-team-d                      # todos los modelos de models/
 docker run --rm -v "$PWD:/app" lssa-team-d invalid/c6-layers.arch  # un modelo mal formado
 ```
 
 Sin argumentos se procesan todos los modelos de `models/`. Los artefactos quedan en
-`out/<modelo>/`: `connectors.md`, `view.mmd` (Mermaid) y `analysis.md`.
+`out/<modelo>/`: `connectors.md`, `view.mmd` (Mermaid), `analysis.md` y `summary.md` (este último, adaptación [A]).
 
 ## Estructura
 
@@ -69,3 +71,64 @@ Sin argumentos se procesan todos los modelos de `models/`. Los artefactos quedan
 | SoS-QS1 (M4), `sos.arch` | — | 780.000 ms, cumple | 780 s | Ninguna; lenguaje base |
 | SoS-QS1 (M4), modelos del NCS | 7.573 s, no cumple | 780 s, cumple | Sin cifra → 780 s | La Entrega 2 no dio cifra para la estructura de partida |
 | SoS-QS1 (M3), modelos del NCS | No aplica (SoS-K36 no existe) | 55 s, cumple | 55 s | Ninguna; no se puede escribir en `sos.arch` con el lenguaje base |
+
+## Equipo A — Sistema de Gestión de Puertos del Caribe (CPMS)
+
+El equipo A modela el constituyente `CPS` con el mismo lenguaje de este repositorio. Sus adaptaciones están marcadas `[A]` en `arch.tx`, `metamodel.py` y `transformations.py`. Todas son adiciones, así que los modelos del equipo D y `sos.arch` siguen dando exactamente los mismos artefactos y sus modelos mal formados se rechazan con los mismos mensajes.
+
+### Archivos
+
+| Archivo | Contenido |
+|---------|-----------|
+| `models/cpms-l1.arch` | Estructura de partida: la de la Entrega 1 (44 componentes, 88 conectores internos) con las propiedades de la Entrega 2 (L1 a L24) |
+| `models/cpms-l3.arch` | Estructura resultante de la Entrega 2: T2.8, T2.9, A-K85' y A-K89 a A-K98 (numeración de la corrección 2.1, §4.1), e `instances 2` en T2.1, T2.5, T3.6 y T3.9 |
+| `invalid/cpms-*.arch` | Un modelo mal formado por restricción del equipo (C8, C9, C10) y el caso de C4 del feedback de la Entrega 1; los mensajes están en `invalid/expected-rejections.txt` |
+| `tools/make_invalid_cpms.py` | Escribe `invalid/cpms-*.arch` a partir de `models/cpms-l1.arch`, con un solo cambio en cada uno |
+| `out/cpms-l1/`, `out/cpms-l3/` | Artefactos generados, incluido `summary.md` |
+
+Se generan con el mismo comando del repositorio (`docker run --rm -v "$PWD:/app" lssa-team-d`, o `python generation.py`). Los modelos mal formados se regeneran con `python tools/make_invalid_cpms.py`.
+
+### Adaptaciones del lenguaje [A]
+
+| Adaptación | Dónde | Para qué |
+|------------|-------|----------|
+| Identificadores de las entregas (`T2.1`, `A-K70`, `A-K85'`) | Gramática (`Ident`), vista | Trazabilidad directa con las Entregas 1 y 2. Todo identificador del lenguaje base sigue siendo válido; la vista Mermaid convierte `.`, `-` y `'` en `_` |
+| `event_capacity` y `event_load` también en conectores | Gramática | La tasa de consultas de SoS-K21a frente al tope de 2 por segundo de P7 (A-QS6) |
+| Métrica `utilization` | Gramática, C5, análisis | Carga / (capacidad × instancias) del elemento más cargado: T2.5 a 20 eventos/s con 10 por instancia (A-QS4) |
+| `replicas n` en un factor | Gramática, C5, análisis | Evaluar como par un elemento que en la estructura tiene una sola instancia, sin cambiar la estructura: el «antes» de la Entrega 2 ya suponía pares |
+| `summary.md` | Transformaciones | Conteos por tier, por acoplamiento y por naturaleza, que reproducen las tablas de las Entregas 1 y 2 |
+| Artefactos en UTF-8 y LF | Transformaciones | Los mismos bytes en Docker y en Windows |
+
+Lo demás ya estaba en el lenguaje y se usa tal cual: el presupuesto por factor (`= valor`), `beta` sobre un componente con `instances` y la métrica `deadline`.
+
+### Restricciones [A]
+
+| ID | Restricción | Origen (Entrega 1 del CPMS) | Alcance | Modelo rechazado |
+|----|-------------|-----------------------------|---------|------------------|
+| C8 | Todo enlace que cruza una frontera empieza y termina en un componente T2 | Patrón gateway (§3.2 y §3.5) | Global | `cpms-c8-boundary-not-at-gateway.arch` |
+| C9 | Un equipo físico (T5) recibe comandos de control de un solo componente | Estilo jerárquico y lazo de control (§5.2) | Constituyente `CPS` | `cpms-c9-equipment-with-two-authorities.arch` |
+| C10 | Una notificación de evento nunca es bloqueante | Estilo orientado a eventos | Constituyente `CPS` | `cpms-c10-event-with-blocking-coupling.arch` |
+
+C9 y C10 se revisan solo dentro de `CPS`, porque un estilo se atribuye a una parte delimitada de la estructura y no a todo el SoS (el NCS, por ejemplo, tiene un outbox bloqueante en `D_K30a`). La regla de C7 del equipo D (ningún comando cruza la frontera) ya cubre la del CPMS y no se repite.
+
+`cpms-c4-store-shared.arch` reproduce la observación del feedback de la Entrega 1: T3.12 lee T4.2 sin pasar por T3.1. C4 lo rechaza con `T4.2: data store shared by ['T3.1', 'T3.12']`. Los dos modelos del CPMS ya traen esa corrección.
+
+### Convenciones
+
+- Los componentes internos conservan el identificador de la Entrega 1 (`T1.1` … `T5.10`). Los conectores internos van de `A-K1` a `A-K98`, con `'` para los modificados (`A-K85'`).
+- Los componentes de frontera y los 19 conectores globales del CPMS se copian de `sos.arch` con su texto, acuerdo, acoplamiento y latencia. Solo se añaden las propiedades que `sos.arch` no trae y que piden los análisis del equipo: la disponibilidad de CGW, de NCG y de los enlaces (L9 a L11), y la capacidad y la carga de SoS_K21a (P7).
+- `SoS_K5` entra en los modelos del CPMS porque es una etapa de SoS-QS1 (M4), aunque no toca al puerto. Por eso `summary.md` cuenta 20 conectores de frontera.
+- Acoplamiento de los conectores globales: se sigue la convención de `sos.arch` (un par solicitud/respuesta es bloqueante en sus dos conectores). La Entrega 2 (§4.1) había clasificado como suministro las respuestas K1b, K10b, K12b, K21b, K24b, K25b, K26b y K31b, y también K32.
+- Disponibilidad en %, tasas por segundo, `latency` en ms y `deadline` en s. Las metas de disponibilidad de A-QS2 (99,9 %) y del par de T2.5 (99,99 %) son supuestas: la Entrega 2 no las fija.
+
+### Resultados
+
+| Escenario | Antes (l1) | Después (l3) | Entrega 2 | Diferencia |
+|-----------|-----------|--------------|-----------|------------|
+| A-QS2: disponibilidad de la salida (C1) | 99,70 % (26,2 h/año), no cumple | 99,99 % (0,7 h/año), cumple | 99,84 % → 99,992 % | Antes: la Entrega 2 ya suponía pares de T2.1, T3.6 y T3.9. Con esos pares (`replicas 2`), l1 da 99,84 % (13,8 h/año), igual que la Entrega 2 |
+| A-QS4: utilización de T2.5 a 20 eventos/s | 200 %, no cumple | 100 %, cumple | 2 instancias de 10 eventos/s | Ninguna |
+| A-QS4: disponibilidad del par de T2.5 | — | 99,99 % (0,4 h/año; 0,0051 % de indisponibilidad), cumple | 99,9949 % | Ninguna |
+| A-QS4: latencia lectura → T3.6 (3 saltos de 50 ms, L14) | 150 ms | 150 ms, cumple | Meta ≤ 200 ms | La suma solo vale sin saturación: en l1, T2.5 está al 200 % |
+| A-QS6: consultas a SoS-K21a | 75 %, cumple | 75 %, cumple | 1,5 de 2 consultas/s | Ninguna |
+| A-QS6: reconciliación de 120 citas | 60 s (120 s con reintento), cumple | 60 s (120 s), cumple | 60 s / 120 s ≤ 300 s | Ninguna |
+| SoS-QS1 (M4) | 780.000 ms, cumple | 780.000 ms, cumple | 780 s | Ninguna |
