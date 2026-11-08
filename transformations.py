@@ -81,16 +81,47 @@ def _instances(component):
     return getattr(component, 'instances', 0) or 1
 
 
+def _value(single, prop):
+    if single.value is not None:
+        return single.value
+    return getattr(single.ref, prop, None)
+
+
+def _label(single):
+    return single.ref.name + (' (budget)' if single.value is not None else '')
+
+
+def _fmt_ms(v):
+    if math.isinf(v):
+        return '∞ (silence not detectable)'
+    return f'{v:g} ms'
+
+
+def _stage_time(single, metric):
+    """[C] Stage time in ms. In detection, a periodic connector adds period * misses
+    (period 0 = publishes changes only: silence is ambiguous and not detectable)."""
+    t = 0.0
+    if metric == 'detection' and single.ref.period is not None:
+        if single.ref.period == 0:
+            return math.inf
+        misses = single.ref.misses if single.ref.misses is not None else 1
+        t += single.ref.period * misses
+    lat = _value(single, 'latency')
+    if lat is not None:
+        t += lat
+    return t
+
+
 def _unavailability(factor):
     """Unavailability of a factor. A group of replicas, or a component with several
     instances and a beta, uses the common-cause fraction: beta*U + ((1 - beta)*U)**n."""
     if factor.__class__.__name__ == 'Single':
-        u = 1 - factor.ref.availability / 100
+        u = 1 - _value(factor, 'availability') / 100
         if factor.beta:
             n, b = factor.replicas or _instances(factor.ref), factor.beta   # [A] replicas
             return b * u + ((1 - b) * u) ** n, f'{factor.ref.name} × {n} (β = {b:g})'
         return u, factor.ref.name
-    u = 1 - factor.members[0].ref.availability / 100
+    u = 1 - _value(factor.members[0], 'availability') / 100
     b, n = factor.beta, len(factor.members)
     name = ', '.join(m.ref.name for m in factor.members)
     return b * u + ((1 - b) * u) ** n, f'{name} (β = {b:g})'
@@ -111,13 +142,52 @@ def analyze(analysis):
         hours = (100 - result) / 100 * 8760
         summary = f'Chain availability: **{result:.2f} %** ({hours:.1f} h/year)'
         met = round(result, 6) >= analysis.target
-    elif analysis.metric == 'latency':
-        result = sum(f.ref.latency for f in analysis.factors)
+    elif analysis.metric in ('latency', 'detection'):
+        # [C] Supports both base latency chains and chains with budgets (= value),
+        # parallel groups ([A | B]) and silence detection (period * misses).
+        result = 0.0
         for f in analysis.factors:
-            rows.append(f'| {f.ref.name} | {f.ref.latency:g} ms |')
+            if f.__class__.__name__ == 'Single':
+                t = _stage_time(f, analysis.metric)
+                rows.append(f'| {_label(f)} | {_fmt_ms(t)} |')
+            else:
+                member_times = [_stage_time(m, analysis.metric) for m in f.members]
+                t = max(member_times)
+                names = ' ‖ '.join(f'{m.ref.name} ({_fmt_ms(mt)})'
+                                   for m, mt in zip(f.members, member_times))
+                rows.append(f'| {names} | {_fmt_ms(t)} (maximum, in parallel) |')
+            result += t
         header = ['| Stage | Budget |', '|-------|--------|']
-        summary = f'Chain latency: **{result:g} ms**'
-        met = round(result, 6) <= analysis.target
+        label = 'Chain latency' if analysis.metric == 'latency' else 'Detection time'
+        summary = f'{label}: **{_fmt_ms(result)}**'
+        met = not math.isinf(result) and round(result, 6) <= analysis.target
+    elif analysis.metric == 'drain':
+        # [C] Retention and drain after an outage of duration 'outage':
+        # backlog = event_load * outage; lost = max(0, backlog - buffer);
+        # drain time = kept / (event_capacity - event_load).
+        source, holders = analysis.factors[0], analysis.factors[1:]
+        load = source.ref.event_load
+        backlog = float(round(load * analysis.outage))
+        rows.append(f'| {source.ref.name} | event_load {load:g} ev/s × outage {analysis.outage:g} s '
+                    f'= {backlog:g} events | — | — |')
+        worst_time, worst_lost = 0.0, 0.0
+        for h in holders:
+            r = h.ref
+            cap = r.event_capacity
+            lost = max(0.0, backlog - r.buffer)
+            kept = backlog - lost
+            t = kept / (cap - load) if cap > load else (0.0 if kept == 0 else math.inf)
+            if lost > 0 and kept == 0:
+                t = math.inf
+            worst_time, worst_lost = max(worst_time, t), max(worst_lost, lost)
+            tt = '∞ (nothing retained)' if math.isinf(t) else f'{t:.1f} s'
+            rows.append(f'| {r.name} | buffer {r.buffer:g} events; event_capacity {cap:g} ev/s | '
+                        f'{lost:g} | {tt} |')
+        header = ['| Element | Capacity | Events lost | Drain time |',
+                  '|---------|----------|-------------|------------|']
+        tt = '∞' if math.isinf(worst_time) else f'{worst_time:.1f} s'
+        summary = f'Events lost: **{worst_lost:g}**; drain time: **{tt}**'
+        met = worst_lost == 0 and not math.isinf(worst_time) and round(worst_time, 6) <= analysis.target
     elif analysis.metric == 'deadline':
         # [D] Sum of the budgets of the stages; a group works in parallel and counts its maximum.
         result = 0
