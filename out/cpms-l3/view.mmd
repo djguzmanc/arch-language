@@ -1,0 +1,179 @@
+flowchart LR
+  subgraph CPS["Sistema de Gestión de Puertos del Caribe"]
+    T1_1["T1.1 Panel de control operativo (T1)"]
+    T1_2["T1.2 Consola de planificación (T1)"]
+    T1_3["T1.3 Portal de agentes y transportistas (T1)"]
+    T1_4["T1.4 Terminal de cabina de equipos (T1)"]
+    T1_5["T1.5 Kiosco de portería (T1)"]
+    T1_6["T1.6 Consola de inspección (T1)"]
+    CGW["Caribbean Port Gateway (T2)"]
+    T2_2["T2.2 Broker de eventos interno (T2)"]
+    T2_3["T2.3 Adaptador de navieras y agentes (T2)"]
+    T2_4["T2.4 Adaptador de equipos del terminal (T2)"]
+    T2_5["T2.5 Gateway IoT de campo (T2)"]
+    T2_6["T2.6 Receptor AIS de buques (T2)"]
+    T2_7["T2.7 Backend para clientes externos (BFF) (T2)"]
+    T2_8["T2.8 Buffer de eventos de custodia (T2)"]
+    T2_9["T2.9 Caché de levantes aduaneros (T2)"]
+    T3_1["T3.1 Gestión de escalas (T3)"]
+    T3_2["T3.2 Asignación de atraque (T3)"]
+    T3_3["T3.3 Planificación de grúas de muelle (T3)"]
+    T3_4["T3.4 Gestión de patio (T3)"]
+    T3_5["T3.5 Despacho de transporte interno (T3)"]
+    T3_6["T3.6 Gestión de portería y citas (T3)"]
+    T3_7["T3.7 Gestión de unidades de carga (T3)"]
+    T3_8["T3.8 Custodia y transferencia (T3)"]
+    T3_9["T3.9 Estado aduanero y retenciones (T3)"]
+    T3_10["T3.10 Coordinador de operaciones del terminal (T3)"]
+    T3_11["T3.11 Seguridad y control de acceso (T3)"]
+    T3_12["T3.12 Planificación intermodal (T3)"]
+    T4_1[("T4.1 BD de unidades de carga (T4)")]
+    T4_2[("T4.2 BD de escalas y atraques (T4)")]
+    T4_3[("T4.3 BD de citas (T4)")]
+    T4_4[("T4.4 Registro de custodia (T4)")]
+    T4_5[("T4.5 Repositorio documental (T4)")]
+    T4_6[("T4.6 BD de ocupación de patio (T4)")]
+    T4_7[("T4.7 BD de retenciones (T4)")]
+    T4_8[("T4.8 Histórico de eventos (T4)")]
+    T4_9[("T4.9 BD de permisos de acceso (T4)")]
+    T5_1["T5.1 Grúas de muelle (T5)"]
+    T5_2["T5.2 Grúas de patio (T5)"]
+    T5_3["T5.3 Vehículos de transporte interno (T5)"]
+    T5_4["T5.4 Carriles y barreras de portería (T5)"]
+    T5_5["T5.5 Básculas de camiones (T5)"]
+    T5_6["T5.6 Lectores OCR/RFID (T5)"]
+    T5_7["T5.7 Sensores de patio y refrigerados (T5)"]
+    T5_8["T5.8 Computadores a bordo de grúas (T5)"]
+    T5_9["T5.9 Cámaras de seguridad perimetral (T5)"]
+    T5_10["T5.10 Computadores a bordo de vehículos (T5)"]
+  end
+  subgraph RTS["Sistema de Transporte Carretero"]
+    RGW["Road Gateway (T2)"]
+  end
+  subgraph RLS["Sistema de Transporte Férreo"]
+    LGW["Rail Gateway (T2)"]
+  end
+  subgraph FTS["Sistema de Transporte Fluvial"]
+    FGW["Fluvial Gateway (T2)"]
+  end
+  subgraph NCS["Sistema de Coordinación Nacional"]
+    NCG["National Coordination Gateway (T2)"]
+  end
+  T5_6 -->|A-K1| T2_5
+  T5_5 -->|A-K2| T2_5
+  T5_7 -->|A-K3| T2_5
+  T5_9 -->|A-K4| T2_5
+  T2_5 -->|A-K5| T2_2
+  T5_8 -->|A-K6| T2_4
+  T5_10 -->|A-K7| T2_4
+  T2_4 -->|A-K8| T2_2
+  T3_10 -->|A-K9| T3_5
+  T3_10 -->|A-K10| T2_4
+  T3_5 -->|A-K11| T2_4
+  T2_4 -->|A-K12| T5_8
+  T2_4 -->|A-K13| T5_10
+  T5_8 -->|A-K14| T5_1
+  T5_1 -->|A-K15| T5_8
+  T5_8 -->|A-K16| T5_2
+  T5_2 -->|A-K17| T5_8
+  T5_10 -->|A-K18| T5_3
+  T5_3 -->|A-K19| T5_10
+  T2_4 -->|A-K20| T1_4
+  T1_4 -->|A-K21| T2_4
+  T2_2 -->|A-K22| T3_6
+  T2_2 -->|A-K23| T3_4
+  T2_2 -->|A-K24| T3_10
+  T2_2 -->|A-K25| T3_11
+  T2_2 -->|A-K26| T4_8
+  T2_2 -->|A-K27| T1_1
+  T2_6 -->|A-K28| T3_1
+  T2_3 -->|A-K29| T3_1
+  T3_1 -->|A-K30| T3_2
+  T3_2 -->|A-K31| T3_1
+  T3_2 -->|A-K32| T3_3
+  T3_3 -->|A-K33| T3_10
+  T3_4 -->|A-K34| T3_10
+  T1_2 -->|A-K35| T3_2
+  T1_2 -->|A-K36| T3_4
+  T3_2 -->|A-K37| T1_2
+  T3_1 -->|A-K38| T3_7
+  T3_6 -->|A-K39| T3_7
+  T3_7 -->|A-K40| T3_4
+  T3_4 -->|A-K41| T3_7
+  T3_6 -->|A-K42| T3_9
+  T3_9 -->|A-K43| T3_6
+  T1_6 -->|A-K44| T3_9
+  T3_9 -->|A-K45| T3_7
+  T3_6 -->|A-K46| T3_8
+  T3_11 -->|A-K47| T3_6
+  T3_6 -->|A-K48| T2_5
+  T2_5 -->|A-K49| T5_4
+  T3_10 -->|A-K50| T3_8
+  T3_7 -->|A-K51| T3_12
+  T1_3 -->|A-K52| T2_7
+  T2_7 -->|A-K53| T3_6
+  T3_6 -->|A-K54| T2_7
+  T2_7 -->|A-K55| T1_3
+  T1_5 -->|A-K56| T2_7
+  T2_7 -->|A-K57| T1_5
+  T3_7 -->|A-K58| T4_1
+  T3_1 -->|A-K59| T4_2
+  T3_6 -->|A-K60| T4_3
+  T3_8 -->|A-K61| T4_4
+  T3_1 -->|A-K62| T4_5
+  T3_4 -->|A-K63| T4_6
+  T3_9 -->|A-K64| T4_7
+  T3_11 -->|A-K65| T4_9
+  T3_12 -->|A-K66| T3_4
+  T3_4 -->|A-K67| T3_12
+  T3_12 -->|A-K68| T3_10
+  T3_12 -->|A-K69| T3_6
+  CGW -->|A-K70| T3_6
+  T3_6 -->|A-K71| CGW
+  CGW -->|A-K72| T3_2
+  T3_2 -->|A-K73| CGW
+  T3_1 -->|A-K74| CGW
+  T3_9 -->|A-K75| CGW
+  CGW -->|A-K76| T3_9
+  T3_8 -->|A-K77| CGW
+  CGW -->|A-K78| T3_8
+  T3_12 -->|A-K79| CGW
+  CGW -->|A-K80| T3_12
+  CGW -->|A-K81| T3_12
+  T3_12 -->|A-K82| CGW
+  T3_12 -->|A-K83| CGW
+  CGW -->|A-K84| T3_12
+  T3_8 -->|A-K85'| T2_8
+  T2_8 -->|A-K89| T3_8
+  T2_8 -->|A-K90| CGW
+  T3_12 -->|A-K86| CGW
+  CGW -->|A-K87| T3_12
+  CGW -->|A-K88| T3_9
+  CGW -->|A-K91| T2_9
+  CGW -->|A-K92| T2_9
+  T3_9 -->|A-K93| T2_9
+  T2_9 -->|A-K94| T3_9
+  CGW -->|A-K95| T3_6
+  CGW -->|A-K96| T3_8
+  CGW -->|A-K97| T3_12
+  T3_8 -->|A-K98| T3_6
+  RGW -->|SoS_K1a| CGW
+  CGW -->|SoS_K1b| RGW
+  FGW -->|SoS_K10a| CGW
+  CGW -->|SoS_K10b| FGW
+  CGW -->|SoS_K11| NCG
+  CGW -->|SoS_K12a| NCG
+  NCG -->|SoS_K12b| CGW
+  CGW -->|SoS_K21a| NCG
+  NCG -->|SoS_K21b| CGW
+  CGW -->|SoS_K24a| LGW
+  LGW -->|SoS_K24b| CGW
+  LGW -->|SoS_K25a| CGW
+  CGW -->|SoS_K25b| LGW
+  CGW -->|SoS_K26a| RGW
+  RGW -->|SoS_K26b| CGW
+  CGW -->|SoS_K29| NCG
+  CGW -->|SoS_K31a| FGW
+  FGW -->|SoS_K31b| CGW
+  NCG -->|SoS_K32| CGW
+  RGW -->|SoS_K5| NCG
