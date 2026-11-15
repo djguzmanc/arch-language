@@ -34,7 +34,7 @@ Resultado en las categorías del Lab 5 (con margen, sin margen, inconclusa, viol
 ## 1. Alcance
 
 - Modelo: `models/rail-e3.arch` (sistema `Rail`, constituyente RLS).
-- Versión del modelo: of the new data, arribos-ms); 0 messages rejected by version during the coexistence; deployment without stopping the Rail Gateway.
+- Versión del modelo: Model (M1) of the Rail Transportation System, iteration 3 of Delivery 4: the resulting structure of Delivery 2, IDENTICAL to rail-e2 (same components, connectors and links, same analyses of Delivery 3). It only adds the parameters of Delivery 2 that scenario B (F-QS1) needs and that rail-e2 did not write, each marked with "Added in iteration 3" and its source:
 - Huella SHA-256 del archivo: `4e488e74b58f`.
 - Contenido: 38 componentes, 64 conectores, 9 análisis, 16 escenarios, 9 tácticas.
 - Grafo C&C por tier: `graph.png`.

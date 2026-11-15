@@ -580,11 +580,11 @@ def _version(source):
     for line in text.splitlines():
         line = line.strip()
         comments.append(line[2:].strip() if line.startswith('//') else None)
-    tagged = [i for i, c in enumerate(comments) if c and ('iteraci' in c.lower() or 'versi' in c.lower())]
+    # The header comment block at the top of the file names the structure and the iteration.
     first = [i for i, c in enumerate(comments) if c]
-    if not (tagged or first):
+    if not first:
         return '—', digest
-    i = (tagged or first)[0]
+    i = first[0]
     parts = []
     while i < len(comments) and comments[i] and len(parts) < 4:
         parts.append(comments[i])

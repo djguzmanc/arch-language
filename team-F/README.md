@@ -151,8 +151,8 @@ medida cuentan su presupuesto. El reporte declara tres cosas:
 - se compone nuestro `drain` con el `recovery` de D, que además cuenta la espera 1/λ de la primera
   llegada (0,67 s según D).
 
-Resultado actual (`out/sos/sos-qs1.md`): férreo 108,5 s [102,8; 114,2] en rail-e4 (144,9 s
-[140,6; 149,3] en rail-e3), con margen frente a 300 s; composición con las medidas verificadas
+Resultado actual (`out/sos/sos-qs1.md`): férreo 108,5 s [102,9; 114,1] en rail-e4 (144,9 s
+[140,7; 149,2] en rail-e3), con margen frente a 300 s; composición con las medidas verificadas
 733,8 s [733,3; 734,3] ≤ 900 s, con margen (el máximo de los consumidores sigue en el presupuesto
 de 300 s de los demás). Holgura hasta violar: 165,7 s (Carretera hasta 365,7 s, NCS hasta 350 s,
 consumidores hasta 465,7 s). Con el NCS sin su rediseño (ncs-e2 de D) SoS-QS1 se viola.

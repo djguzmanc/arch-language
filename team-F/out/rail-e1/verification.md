@@ -31,7 +31,7 @@ Resultado en las categorías del Lab 5 (con margen, sin margen, inconclusa, viol
 ## 1. Alcance
 
 - Modelo: `models/rail-e1.arch` (sistema `Rail`, constituyente RLS).
-- Versión del modelo: of the new data, arribos-ms); 0 messages rejected by version during the coexistence; deployment without stopping the Rail Gateway.
+- Versión del modelo: Model (M1) of the Rail Transportation System: starting structure (Delivery 1 with the corrections CR1 to CR4 of Delivery 2, section 2.2) and the properties of Delivery 2 (assumptions of section 4.3). Boundary components and global connectors are written as they appear in sos.arch. Latencies and periods in ms.
 - Huella SHA-256 del archivo: `f65e3787ce6d`.
 - Contenido: 32 componentes, 49 conectores, 7 análisis, 16 escenarios, 0 tácticas.
 - Grafo C&C por tier: `graph.png`.

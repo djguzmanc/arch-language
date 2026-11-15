@@ -494,7 +494,7 @@ scenario QS_F3T "F-QS3 (cola de telemetría)" attribute "rendimiento"
 // trucks (0 trucks lost means 0 units lost).
 // Sensitivity (D7): the same effective query rates as iteration 3, q_ef = 2 (agreed), 1.43,
 // 1.11, 1 (one retry per query) and 0.93/s, written as the rate of ARR, 1/(1/q_ef + 0.15 s).
-// Known result (Laboratory 5, section 4.6): backlog/(μ − λ) = 160/(1.538 − 0.0111) = 104.8 s.
+// Known result: exact drain E[N]/μ = 160/1.538 = 104.1 s; Laboratory 5 busy period backlog/(μ − λ) = 160/(1.538 − 0.0111) = 104.8 s as second reference.
 // Measures: detection <= 240 s (FQS1StaleData) and reconciliation <= 300 s (drain) are those
 // of Delivery 2. "0 lost" (P4) is not written in Delivery 2: it is derived from "reconcilia
 // custodia y reservas" of the response (what is not held cannot be reconciled).

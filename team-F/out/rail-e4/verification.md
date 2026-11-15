@@ -35,8 +35,8 @@ Resultado en las categorías del Lab 5 (con margen, sin margen, inconclusa, viol
 ## 1. Alcance
 
 - Modelo: `models/rail-e4.arch` (sistema `Rail`, constituyente RLS).
-- Versión del modelo: of the new data, arribos-ms); 0 messages rejected by version during the coexistence; deployment without stopping the Rail Gateway.
-- Huella SHA-256 del archivo: `512e80b2722e`.
+- Versión del modelo: Model (M1) of the Rail Transportation System, iteration 4 of Delivery 4: redesigned structure. Starting point: rail-e3 (resulting structure of Delivery 2 with the parameters of scenario B). Changes with respect to rail-e3, each marked "Iteration 4" below and declared as a tactic linked to its scenario (C15):
+- Huella SHA-256 del archivo: `76c78984195c`.
 - Contenido: 40 componentes, 68 conectores, 10 análisis, 16 escenarios, 12 tácticas.
 - Grafo C&C por tier: `graph.png`.
 - Simulación: eventos discretos (colas FIFO con servicio exponencial, llegadas Poisson); réplicas independientes con semillas 1..n; IC 95 % con t de Student; resultado con margen del 10 % del umbral.
