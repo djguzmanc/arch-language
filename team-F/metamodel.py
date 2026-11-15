@@ -7,13 +7,13 @@ teams converge; our C6 and C7 keep theirs, which in the common language name oth
 | Ours | Common | Content | Origin |
 |------|--------|---------|--------|
 | C1-C4 | C1-C4 | Laboratory 4: links, single commander per command, agreement on boundary connectors, single user of a T4 store | Lab 4 |
-| C5 | C5 | Properties that each analysis needs [F, extended]; in Delivery 4 also: `hit` in (0, 1] and only on a connector with capacity (and `vary hit` on such a connector, values in [0, 1]); in a workload, `Q reads S` only on a queue with its read dependency; a queue at most once per path; `drain` needs a store in the path of its workload and a fault | F |
+| C5 | C5 | Properties that each analysis needs [F, extended]; in Delivery 4 also: `hit` in (0, 1] and only on a connector with capacity (and `vary hit` on such a connector, values in [0, 1]); in a workload, `Q reads S` only on a queue with its read dependency; a queue at most once per path; `drain` needs a fault and a store in the path of its workload at or before the failing component; `parallel` only on a blocking dependency with >= 2 links from one source; every fork entered through a `parallel` connector from the previous step; no workload visits two targets of a `parallel` connector in sequence | F |
 | C6 | (C6 = layers, team D) | Hierarchical style of Rail: one commander per component, never up the tiers, no cycles | F (kept) |
 | C7 | (C7 = no command crosses, team D; C8 [A] similar to ours) | Constituent gateway with anti-corruption layer | F (kept) |
 | - | C9-C11 | Rules of teams A and C, scoped to CPS/RTS | not applicable |
 | C12 | C12 (= Lab 5 C6) | Every hop of a workload follows a connector (either direction); with a fork, every pair (previous step, branch) and (branch, next step) | L5, adapted to forks [F] |
 | C13 | C13 (= Lab 5 C7) | A fault only on a component with capacity | L5 |
-| C14 | C14 | Six parts of a quality scenario; its measure is simulated (workloads, measures and run), verified_by an analysis, or not_verifiable | D4 (run is tested by replications: auto_init_attributes) |
+| C14 | C14 | Six parts of a quality scenario; its measure is simulated (workloads, measures and run), verified_by an analysis, or not_verifiable. [F] A simulated run has >= 2 replications and a warmup below its duration | D4 (run is tested by replications: auto_init_attributes) |
 | C15 | C15 | A tactic introduces or changes elements and its scenario is verified | D4 |
 | C16 | C16 | Correspondence with sos.arch (K1-K3): correspondence.py --as RLS | D4 |
 
@@ -152,6 +152,18 @@ def check_model(model):
             _error(f'{k.name}: hit applies only to a connector with capacity', k)
         if k.hit_set and not 0 < k.hit <= 1:
             _error(f'{k.name}: hit {k.hit:g} is not in (0, 1]', k)
+        # C5 [F, Delivery 4]. A parallel connector is a blocking dependency whose links, at least
+        # two, leave one source: the calls that source makes at once (a fork enters through it).
+        if k.parallel:
+            if 'dependency' not in k.natures or k.coupling != 'blocking':
+                _error(f'{k.name}: parallel applies only to a blocking dependency', k)
+            if len(k.links) < 2:
+                _error(f'{k.name}: a parallel connector needs at least two links, '
+                       f'it has {len(k.links)}', k)
+            sources = sorted({link.path[0].name for link in k.links})
+            if len(sources) > 1:
+                _error(f'{k.name}: the links of a parallel connector leave one source, '
+                       f'not {sources}', k)
 
     # C4. A data store (T4) is accessed by dependency from a single component.
     for c in components:
@@ -302,8 +314,20 @@ def _hops(workload):
     return [h for step in workload.steps for h in _ends(step)]
 
 
+def _held(workload, failing):
+    """[F] Whether a store at or before the first failing component of the path holds its jobs."""
+    for step in workload.steps:
+        hops = _ends(step)
+        if any(h.ref.store for h in hops):
+            return True
+        if any(h.ref in failing for h in hops):
+            return False
+    return False
+
+
 def check_scenarios(model, connectors):
     hops = {(a, b) for k in connectors for link in k.links for a, b in zip(link.path, link.path[1:])}
+    parallels = [k for k in connectors if k.parallel]
     for s in model.scenarios:
         for w in s.workloads:
             # C12 [L5 C6, F]. Every hop of a workload follows a connector of the model, in either
@@ -315,6 +339,33 @@ def check_scenarios(model, connectors):
                         if (a, b) not in hops and (b, a) not in hops:
                             _error(f'{s.name}: {w.name} goes from {a.name} to {b.name} '
                                    f'without a connector', w)
+            # C5 [F, Delivery 4]. The parallelism lives in the structure: a fork enters its
+            # branches through one parallel connector, with a link that goes from the previous
+            # step to each branch; and a workload does not visit two targets of a parallel
+            # connector one after the other (that is a fork).
+            for i, step in enumerate(w.steps):
+                if step.__class__.__name__ != 'Fork':
+                    continue
+                names = ' | '.join(h.ref.name for h in step.branches)
+                prev = w.steps[i - 1] if i else None
+                if prev is None or prev.__class__.__name__ == 'Fork':
+                    _error(f'{s.name}: {w.name}: the fork [{names}] needs a single step before it', w)
+                if not any(all(any((a, b.ref) in zip(link.path, link.path[1:]) for link in k.links)
+                               for b in step.branches)
+                           for k in parallels for a in [prev.ref]):
+                    _error(f'{s.name}: {w.name}: the fork [{names}] after {prev.ref.name} is not '
+                           f'entered through a parallel connector with a link to each branch', w)
+            sequential = [step.ref for step in w.steps if step.__class__.__name__ != 'Fork']
+            for k in parallels:
+                targets = {link.path[-1] for link in k.links}
+                visited = []
+                for c in sequential:
+                    if c in targets and c not in visited:
+                        visited.append(c)
+                if len(visited) > 1:
+                    _error(f'{s.name}: {w.name} visits {", ".join(c.name for c in visited)}, '
+                           f'targets of the parallel connector {k.name}, in sequence; '
+                           f'they are a fork', w)
             # C5 [F, Delivery 4]. In a path, `Q reads S` only on a queue with its read
             # dependency (as in an analysis), and a queue at most once: its jobs would otherwise
             # wait twice in the same FIFO and the hops could not tell its two visits apart.
@@ -359,6 +410,14 @@ def check_scenarios(model, connectors):
         simulated = bool(s.workloads)
         if simulated and (not s.measures or not s.replications):
             _error(f'{s.name}: a simulated scenario needs at least one measure and its run', s)
+        # [F] The confidence interval needs at least two replications, and the warm-up is
+        # discarded from a run that must last longer.
+        if simulated and s.replications == 1:
+            _error(f'{s.name}: a simulated scenario needs at least 2 replications for its '
+                   f'confidence interval', s)
+        if simulated and s.replications and s.warmup >= s.duration:
+            _error(f'{s.name}: warmup {s.warmup:g} s is not below the run duration '
+                   f'{s.duration:g} s', s)
         if s.measures and not simulated:
             _error(f'{s.name}: a measure needs a workload to measure', s)
         if declared and not (simulated or s.checks or s.missing):
@@ -382,6 +441,15 @@ def check_scenarios(model, connectors):
             if not any(h.ref.store for w in measured for h in _hops(w)):
                 names = ', '.join(w.name for w in measured)
                 _error(f'{s.name}: drain on {names}, whose path has no store', m)
+            # The store holds the jobs only if it comes before the component that fails (or is
+            # that component, which holds what it receives [D4]); a store after it sees no job.
+            failing = {f.target for f in s.faults}
+            held = [w for w in measured if _held(w, failing)]
+            if not held:
+                names = ', '.join(w.name for w in measured)
+                down = ', '.join(sorted(c.name for c in failing))
+                _error(f'{s.name}: drain on {names}: no store at or before the failing '
+                       f'component ({down}) in its path, so no job is held', m)
 
     # C15 [D4]. A tactic is linked to what it changes and to a scenario whose measure is
     # verified, so its effect is verified, not assumed (Laboratory 5, section 6).

@@ -42,6 +42,9 @@ Connector:
   'connector' name=ID
   'nature' natures+=Nature[',']
   'coupling' coupling=Coupling
+  (parallel?='parallel')?                   // [F] a blocking dependency whose links, from one source,
+                                            //     are called in parallel; a fork of a workload enters
+                                            //     its branches through it (C5)
   'carries' info=STRING
   ('agreement' agreement=STRING)?
   ('availability' availability=NUMBER)?
@@ -116,7 +119,7 @@ Scenario:
 // [L5] Poisson arrivals that follow the path (C12). [D4] 'compact n': while a store holds the
 // jobs of this workload, only the last n are kept (as in the common language).
 // [F] A step may be a fork of single hops that run in parallel (the job continues when the
-// slowest branch ends), and a queue may read a store (Q reads S) through its blocking dependency
+// slowest branch ends), entered through a `parallel` connector from the previous step (C5), and a queue may read a store (Q reads S) through its blocking dependency
 // with capacity, at the hit fraction of that dependency (C5). A component with latency and no
 // capacity adds its latency once per job; the latency of a connector, once per connector and job.
 Workload:

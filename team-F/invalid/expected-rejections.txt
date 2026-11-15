@@ -1,15 +1,23 @@
 invalid/c12-hop.arch: REJECTED: X12: X12Jobs goes from RSV to LGW without a connector
 invalid/c13-fault.arch: REJECTED: X13: fault on TRAD, which has no capacity
 invalid/c14-parts.arch: REJECTED: X14: quality scenario without environment
+invalid/c14-replications.arch: REJECTED: X14N: a simulated scenario needs at least 2 replications for its confidence interval
 invalid/c14-run.arch: REJECTED: X14R: a simulated scenario needs at least one measure and its run
+invalid/c14-warmup.arch: REJECTED: X14W: warmup 600 s is not below the run duration 600 s
 invalid/c15-tactic.arch: REJECTED: X15T: motivated by X15, whose measure is not verified
 invalid/c5-detection.arch: REJECTED: FQS2SilentConcentrator: F_K11 needs period and misses (or a budget)
 invalid/c5-drain-fault.arch: REJECTED: X5F: drain needs a fault in the scenario
+invalid/c5-drain-order.arch: REJECTED: X5O: drain on X5OJobs: no store at or before the failing component (RSV) in its path, so no job is held
 invalid/c5-drain-store.arch: REJECTED: X5D: drain on X5DJobs, whose path has no store
+invalid/c5-fork-parallel.arch: REJECTED: X5P: X5PJobs: the fork [RSV | TRN | POS] after TRAD is not entered through a parallel connector with a link to each branch
 invalid/c5-hit-capacity.arch: REJECTED: F_K22: hit applies only to a connector with capacity
 invalid/c5-hit-range.arch: REJECTED: F_K22x: hit 0 is not in (0, 1]
 invalid/c5-misses-zero.arch: REJECTED: Expected Misses
 invalid/c5-misses.arch: REJECTED: F_K11: misses needs a period
+invalid/c5-parallel-kind.arch: REJECTED: F_K23b: parallel applies only to a blocking dependency
+invalid/c5-parallel-links.arch: REJECTED: F_K3: a parallel connector needs at least two links, it has 1
+invalid/c5-parallel-sequence.arch: REJECTED: X5S: X5SJobs visits RSV, CRG, targets of the parallel connector F_K2p, in sequence; they are a fork
+invalid/c5-parallel-source.arch: REJECTED: F_K22: the links of a parallel connector leave one source, not ['CRG', 'POS', 'RSV', 'TRN']
 invalid/c5-percentile.arch: REJECTED: FQS3CustodyLatency: 2 fixed stages leave no exceedance for p99.9
 invalid/c5-queue-load.arch: REJECTED: RSV: a queue needs a load below its capacity and no fixed latency
 invalid/c5-queue-twice.arch: REJECTED: X5Q: X5QJobs goes through the queue RSV more than once

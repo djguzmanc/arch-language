@@ -91,7 +91,8 @@ def check(joint, model):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(usage=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--as', dest='constituent',
                         help='[F] constituent of the models, instead of the name of their system')
     parser.add_argument('joint')

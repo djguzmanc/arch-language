@@ -103,7 +103,7 @@ docker run --rm -v "$PWD:/app" --entrypoint python lssa-team-f-verif \
   models/rail-e3.arch models/rail-e4.arch
 
 # P11: SoS-QS1 (M4) bottom-up, top-down y sensibilidad -> out/sos/sos-qs1.md
-# (después de verificar rail-e3: lee su marcador RLS_RECONCILIATION_S)
+# (después de verificar rail-e3 y rail-e4: lee su marcador RLS_RECONCILIATION_S)
 docker run --rm -v "$PWD:/app" --entrypoint python lssa-team-f-verif sos_compose.py
 
 # Contribución de cada táctica y sensibilidad (iteración 4)
@@ -137,10 +137,29 @@ No regresión del lenguaje (deben salir vacíos o iguales):
 for f in invalid/*.arch; do .venv/bin/python generation.py "$f"; done | diff - invalid/expected-rejections.txt
 ```
 
-`sos_compose.py` toma la medida del férreo de `out/rail-e3/verification.md`, de una línea
-`RLS_RECONCILIATION_S <media> <bajo> <alto>` (segundos, punto decimal; el drain de F-QS1 con los
-parámetros nominales), y la del NCS del acuerdo conjunto (ncs-e4 del equipo D: 183,8 s, IC
-[183,3; 184,3]; `--ncs` la cambia). Los tramos sin medida cuentan su presupuesto.
+`sos_compose.py` toma la medida del férreo de la arquitectura final, `out/rail-e4/verification.md`
+(con T4.3), de una línea `RLS_RECONCILIATION_S <media> <bajo> <alto>` (segundos, punto decimal; el
+drain de F-QS1 con los parámetros nominales), y muestra como evolución la de
+`out/rail-e3/verification.md` (antes del rediseño). La del NCS es la del acuerdo conjunto,
+sección 1.3.3 (ncs-e4 del equipo D: 183,8 s, IC [183,3; 184,3]; `--ncs` la cambia). Los tramos sin
+medida cuentan su presupuesto. El reporte declara tres cosas:
+
+- el repositorio del equipo D publica para ncs-e4 184,9 s [183,8; 186,1]; la diferencia no cambia
+  ninguna conclusión y debe resolverse en el acuerdo;
+- T4.3 supone que SoS-K18a devuelve todas las unidades de un camión en una consulta (por confirmar
+  en el acuerdo; si no, la cifra de rail-e3 es la conservadora);
+- se compone nuestro `drain` con el `recovery` de D, que además cuenta la espera 1/λ de la primera
+  llegada (0,67 s según D).
+
+Resultado actual (`out/sos/sos-qs1.md`): férreo 108,5 s [102,8; 114,2] en rail-e4 (144,9 s
+[140,6; 149,3] en rail-e3), con margen frente a 300 s; composición con las medidas verificadas
+733,8 s [733,3; 734,3] ≤ 900 s, con margen (el máximo de los consumidores sigue en el presupuesto
+de 300 s de los demás). Holgura hasta violar: 165,7 s (Carretera hasta 365,7 s, NCS hasta 350 s,
+consumidores hasta 465,7 s). Con el NCS sin su rediseño (ncs-e2 de D) SoS-QS1 se viola.
+
+C16 (`correspondence.py --as RLS`): rail-e2, rail-e3 y rail-e4 corresponden con `sos.arch`;
+rail-e1 solo falla en `K3: global connector SoS_K34 of the joint model is missing` (SoS-K34 lo
+agregó el acuerdo v4 después de la estructura de partida).
 
 ### Extensiones del lenguaje
 
@@ -156,7 +175,8 @@ Marcas en `arch.tx`: [L5] Laboratorio 5, [D4] lenguaje común de la Entrega 4 (e
 | Escenario con seis partes | [D4] | `scenario X "F-QS7" attribute … source … stimulus … artifact A, B environment … response …` | `artifact` refiere elementos del modelo |
 | `verified_by`, `not_verifiable` | [D4] | `verified_by FQS7CapacityRequest` / `not_verifiable "lo que falta"` | La medida se verifica con un análisis del modelo, o se declara no verificable con el concepto que falta |
 | `workload` | [L5] | `workload W rate 8 : A -> B -> C` | Llegadas de Poisson que siguen el path |
-| Fork/join en el path | [F] | `LGW -> TRAD -> [RSV reads CACHE \| TRN \| POS]` | Las ramas corren en paralelo; el trabajo sigue cuando termina la más lenta |
+| `parallel` de conector | [F] | `connector F_K23a nature dependency coupling blocking parallel` | Dependencia bloqueante cuyos links (≥ 2, del mismo origen) se llaman a la vez: el paralelismo queda en la estructura, no solo en el workload |
+| Fork/join en el path | [F] | `LGW -> TRAD -> [RSV reads CACHE \| TRN \| POS]` | Las ramas corren en paralelo; el trabajo sigue cuando termina la más lenta. Entra por un conector `parallel` |
 | `Q reads S` en el path | [F] | `RSV reads CACHE` | La cola Q lee S por su dependencia bloqueante con `capacity`, a la fracción `hit` |
 | `compact` | [D4] | `workload W rate r compact n : …` | Mientras un store retiene el workload, solo se guardan los últimos n |
 | `fault` | [L5] | `fault ARR down at 0 for 14400` | Intervalo sin servicio; los trabajos se pierden salvo que un store los retenga |
@@ -178,6 +198,8 @@ conservan; en el lenguaje común C6 y C7 son otras reglas (tabla de equivalencia
 | C12 [L5 C6, F] | Cada salto de un workload sigue un conector (en cualquier sentido); en un fork, cada par (paso anterior, rama) y (rama, paso siguiente) | `c12-hop.arch` | `X12: X12Jobs goes from RSV to LGW without a connector` |
 | C13 [L5 C7] | Una falla solo en un componente con `capacity` | `c13-fault.arch` | `X13: fault on TRAD, which has no capacity` |
 | C14 [D4] | Un escenario de calidad tiene sus seis partes, y su medida se simula (workloads, measures y run), se verifica con `verified_by` o se declara `not_verifiable` | `c14-parts.arch`, `c14-run.arch` | `X14: quality scenario without environment`; `X14R: a simulated scenario needs at least one measure and its run` |
+| C14 [F] | Un escenario simulado tiene al menos 2 réplicas (para el IC) | `c14-replications.arch` | `X14N: a simulated scenario needs at least 2 replications for its confidence interval` |
+| C14 [F] | El calentamiento es menor que la duración de la corrida | `c14-warmup.arch` | `X14W: warmup 600 s is not below the run duration 600 s` |
 | C15 [D4] | Una táctica introduce o cambia elementos y la motiva un escenario verificado | `c15-tactic.arch` | `X15T: motivated by X15, whose measure is not verified` |
 | C16 [D4] | Correspondencia con `sos.arch` (K1–K3): `correspondence.py --as RLS` | — (lo verifica el programa) | `rail-e1`: `K3: global connector SoS_K34 of the joint model is missing` |
 | C5 [F] `hit` | `hit` solo en un conector con `capacity` | `c5-hit-capacity.arch` | `F_K22: hit applies only to a connector with capacity` |
@@ -187,9 +209,18 @@ conservan; en el lenguaje común C6 y C7 son otras reglas (tabla de equivalencia
 | C5 [F] cola | Una cola aparece una vez por path | `c5-queue-twice.arch` | `X5Q: X5QJobs goes through the queue RSV more than once` |
 | C5 [F] `drain` | `drain` exige un `store` en el path de su workload | `c5-drain-store.arch` | `X5D: drain on X5DJobs, whose path has no store` |
 | C5 [F] `drain` | `drain` exige una falla en el escenario | `c5-drain-fault.arch` | `X5F: drain needs a fault in the scenario` |
+| C5 [F] `drain` | El `store` está en el path antes del componente que falla (o es ese componente): uno después no retiene nada | `c5-drain-order.arch` | `X5O: drain on X5OJobs: no store at or before the failing component (RSV) in its path, so no job is held` |
+| C5 [F] `parallel` | Solo en una dependencia bloqueante | `c5-parallel-kind.arch` | `F_K23b: parallel applies only to a blocking dependency` |
+| C5 [F] `parallel` | Al menos dos links | `c5-parallel-links.arch` | `F_K3: a parallel connector needs at least two links, it has 1` |
+| C5 [F] `parallel` | Todos los links salen del mismo origen | `c5-parallel-source.arch` | `F_K22: the links of a parallel connector leave one source, not ['CRG', 'POS', 'RSV', 'TRN']` |
+| C5 [F] fork | Todo fork entra por un conector `parallel` con un link del paso anterior a cada rama | `c5-fork-parallel.arch` | `X5P: X5PJobs: the fork [RSV \| TRN \| POS] after TRAD is not entered through a parallel connector with a link to each branch` |
+| C5 [F] fork | Un workload no recorre en secuencia dos o más destinos de un conector `parallel` (eso es un fork) | `c5-parallel-sequence.arch` | `X5S: X5SJobs visits RSV, CRG, targets of the parallel connector F_K2p, in sequence; they are a fork` |
 
 Los modelos de `invalid/` se generan con `tools/make_invalid.py` a partir de `rail-e1.arch`; los
 escenarios y tácticas de los casos de la Entrega 4 están escritos en ese script (nombres `X…`).
+En `rail-e1` (estructura de partida) F-K23a no es `parallel` y F-QS7 recorre los tres servicios en
+secuencia; los casos con fork usan un conector `parallel` propio (`F_K2p`, de la consola de
+terminal).
 
 ### Archivos de la Entrega 4
 

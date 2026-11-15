@@ -8,9 +8,11 @@ out/sos/sos-qs1.md with:
 
   1. Bottom-up: each stage of M4 (and each consumer) with its budget, the verified measure when
      one is known and its outcome against the budget. Known measures:
-       - RLS (this team): the drain of F-QS1 (P3) verified by simulation in iteration 3;
-       - NCS (team D): reconciliation of ncs-e4, 183.8 s, 95 % CI [183.3; 184.3], as the joint
-         agreement records it;
+       - RLS (this team): the drain of F-QS1 (P3) verified by simulation on the final architecture
+         (rail-e4, with T4.3); the measure before the redesign (rail-e3) is shown as evolution;
+       - NCS (team D): recovery of ncs-e4, 183.8 s, 95 % CI [183.3; 184.3], as the joint agreement
+         records it (section 1.3.3 of the common document). The repository of team D
+         (out/ncs-e4/verification.md) publishes 184.9 [183.8; 186.1]; the report says so;
      every other stage counts its budget and is marked 'sin medida'.
   2. Top-down: 200 + 40 + NCS + 10 + max(consumers) against 900 s, with the budgets and with the
      verified measures (the ends of the CIs are added: a conservative composition of means).
@@ -20,7 +22,12 @@ out/sos/sos-qs1.md with:
 Outcomes follow Laboratory 5: high <= 0.9 * threshold, satisfied with margin; high <= threshold,
 satisfied without margin; low > threshold, violated; otherwise inconclusive.
 
-Measure of the rail stage. By default it is read from out/rail-e3/verification.md, written by
+Our drain and the recovery of team D are composed as they are, although their definitions differ:
+recovery (Laboratory 5, team D) also counts the wait for the first arrival after the fault
+(about 1/rate), drain does not. The report declares it.
+
+Measure of the rail stage. By default it is read from out/rail-e4/verification.md (and the
+evolution row from out/rail-e3/verification.md), written by
 verification.py (agent SIMULADOR), which must contain one line with the marker
 
     RLS_RECONCILIATION_S <mean> <low> <high>
@@ -28,10 +35,11 @@ verification.py (agent SIMULADOR), which must contain one line with the marker
 in seconds, decimal point, for the drain of F-QS1 with the nominal parameters of the model (the
 first value of the vary, if any). The marker may sit inside an HTML comment or backticks; only
 the first marker of the file is read. --rail MEAN LOW HIGH gives the measure by hand instead,
-and --rail-from another report. Without a measure, the rail stage counts its budget.
+and --rail-from another report (--rail-before-from for the evolution row). Without a measure, the
+rail stage counts its budget.
 
 Usage:
-    python sos_compose.py                                  # models/sos.arch, out/rail-e3/verification.md
+    python sos_compose.py                                  # models/sos.arch, out/rail-e4 and e3
     python sos_compose.py --rail 143.0 135.0 151.0         # measure given by hand
     python sos_compose.py --ncs 184.9 183.8 186.1          # another measure of the NCS
 """
@@ -47,7 +55,20 @@ RAIL = 'RLS'
 # in parallel; the first of them carries the stage in the analysis (CGW).
 NOTICES = ('SoS_K32', 'SoS_K33', 'SoS_K34', 'SoS_K35')
 NCS_E4 = (183.8, 183.3, 184.3)          # team D, ncs-e4, as in the joint agreement
-NCS_SOURCE = 'equipo D, ncs-e4 (acuerdo conjunto)'
+NCS_SOURCE = 'acuerdo conjunto, sección 1.3.3 (documento común)'
+NCS_NOTE = ('el repositorio del equipo D (`out/ncs-e4/verification.md`) publica para ncs-e4 '
+            '184,9 s, IC [183,8; 186,1], y no 183,8 s [183,3; 184,3] como el acuerdo conjunto. '
+            'La diferencia no cambia ninguna conclusión de este reporte (la holgura de SoS-QS1 '
+            'es de más de 160 s) y debe resolverse en el acuerdo. `--ncs` cambia la cifra.')
+RAIL_NOTE = ('T4.3 (reconciliación por camión) supone que SoS-K18a devuelve todas las unidades de '
+             'un camión en una sola consulta; está por confirmar en el acuerdo conjunto. Si no se '
+             'confirma, la cifra de rail-e3 (antes del rediseño) es la conservadora.')
+DEFINITIONS = ('Definiciones distintas: el tramo del férreo es nuestro `drain` (desde el fin de la '
+               'falla hasta que sale el último trabajo retenido) y el del NCS es el `recovery` del '
+               'equipo D (Laboratorio 5), que además cuenta la espera de la primera llegada '
+               'posterior a la falla (≈ 1/λ). Se componen tal como están: según el equipo D esa '
+               'espera es de 0,67 s en su cuello de botella (CAR), así que la suma no cambia de '
+               'forma apreciable, pero no son la misma medida.')
 # What-if of other owners with measures already published (common/README.md, team D).
 WHAT_IF = [
     ('NCS sin su rediseño (ncs-e2 de D)', 'NCS', (1932.8, 1921.5, 1944.1)),
@@ -117,10 +138,15 @@ def compose(chain, group, measures):
 
 
 def main():
-    parser = argparse.ArgumentParser(usage=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--joint', default='models/sos.arch')
     parser.add_argument('--rail', nargs=3, type=float, metavar=('MEAN', 'LOW', 'HIGH'))
-    parser.add_argument('--rail-from', default='out/rail-e3/verification.md')
+    parser.add_argument('--rail-from', default='out/rail-e4/verification.md',
+                        help='report with the marker of the final architecture (rail-e4)')
+    parser.add_argument('--rail-before-from', default='out/rail-e3/verification.md',
+                        help='report with the marker before the redesign (rail-e3), for the '
+                             'evolution row; an empty value omits it')
     parser.add_argument('--ncs', nargs=3, type=float, metavar=('MEAN', 'LOW', 'HIGH'),
                         default=NCS_E4)
     parser.add_argument('--out', default='out/sos/sos-qs1.md')
@@ -134,6 +160,7 @@ def main():
     rail = tuple(args.rail) if args.rail else read_marker(args.rail_from)
     rail_source = ('dado a mano (--rail)' if args.rail else
                    f'simulación, `{args.rail_from}` (P3, drain de F-QS1)' if rail else None)
+    before = read_marker(args.rail_before_from)
     measures = {'NCS': tuple(args.ncs)}
     sources = {'NCS': NCS_SOURCE if tuple(args.ncs) == NCS_E4 else 'dado a mano (--ncs)'}
     if rail:
@@ -163,6 +190,14 @@ def main():
         else:
             lines.append(f'| {name} | {owner} | {fmt(budget, 0)} s | sin medida | — | '
                          f'presupuesto | — |')
+        if owner == RAIL and before:
+            lines.append(f'| {name}, evolución: antes del rediseño (T4.3) | {owner} | '
+                         f'{fmt(budget, 0)} s | {fmt(before[0])} s | '
+                         f'[{fmt(before[1])}; {fmt(before[2])}] | simulación, '
+                         f'`{args.rail_before_from}` (no entra en la composición) | '
+                         f'{outcome(before[1], before[2], budget)} |')
+    lines += ['', f'Nota sobre el NCS: {NCS_NOTE}', '', f'Nota sobre el férreo: {RAIL_NOTE}',
+              '', DEFINITIONS]
     if not rail:
         lines += ['', f'No hay medida del férreo: falta el marcador `RLS_RECONCILIATION_S` en '
                       f'`{args.rail_from}`; el tramo {RAIL} cuenta su presupuesto.']
@@ -191,6 +226,10 @@ def main():
 
     lines.append(row('Presupuestos (E2)', budgets, ncs_budget, consumer_budget))
     lines.append(row('Medidas verificadas', verified, measures['NCS'][2], cons_max(measures, 2)))
+    if before:
+        what = dict(measures, **{RAIL: before})
+        lines.append(row('Medidas verificadas, férreo antes del rediseño (rail-e3)',
+                         compose(chain, group, what), what['NCS'][2], cons_max(what, 2)))
     for label, owner, value in WHAT_IF:
         what = dict(measures, **{owner: value})
         lines.append(row(label, compose(chain, group, what), what['NCS'][2], cons_max(what, 2)))

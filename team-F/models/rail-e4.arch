@@ -219,7 +219,8 @@ connector F_K21 nature event_notification coupling sink
 connector F_K22 nature dependency coupling blocking
   carries "Lecturas y escrituras de los datos de cada servicio"
   : TRN -> TRNDB, CRG -> CRGDB, POS -> POSDB, RSV -> RSVDB
-connector F_K23a nature dependency coupling blocking
+// Modified (F-QS7): the three calls run in parallel (Delivery 2: "en paralelo").
+connector F_K23a nature dependency coupling blocking parallel
   carries "Solicitudes de capacidad, en paralelo, timeout de 300 ms y un reintento"
   : LGW -> TRAD -> RSV, LGW -> TRAD -> TRN, LGW -> TRAD -> POS
 connector F_K23b nature data_flow coupling blocking
@@ -413,71 +414,97 @@ analysis FQS2Routes scenario "F-QS2 (estado de rutas)" detection target 2000 :
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // Delivery 4, iteration 4: every scenario of iterations 1 to 3, verified again on the
-// redesigned structure; artifacts extended with the elements of T4.1 to T4.3. Tactics of
-// Delivery 2 as in rail-e2, plus the tactics of the redesign. Six parts as in Delivery 2 (sections 3 and 5,
-// assumptions of section 4.3); the response measure is simulated (workload, measure, run),
-// verified by an analysis of Delivery 3 (verified_by), or declared not verifiable with what
-// is missing (C14). A measure that the language cannot verify is written as its own scenario.
-// Times of `run` in s; rates in jobs/s.
+// redesigned structure; artifacts extended with the elements of T4.1 to T4.3 where marked.
+// Tactics of Delivery 2 as in rail-e3, plus the tactics of the redesign.
+// Six parts copied from Delivery 2 (team-F-p2, section 5). The artifact refers to elements of
+// the model; where it adds elements to the artifact of Delivery 2, a comment says so. The
+// response measure is simulated (workload, measure, run), verified by an analysis of the
+// model (verified_by), or declared not verifiable with what is missing (C14). A measure of
+// Delivery 2 that the language cannot verify is written as its own scenario, with the six
+// parts of its parent scenario. Times of `run` in s; rates in jobs/s.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
-// Scenario A again (P1). The gateway calls the three services of C4 in parallel (fork: the
-// request goes on when the slowest branch ends) and reservas-ms reads the precalculated
-// capacity from the cache through F-K38a: a hit is served at the 40/s of F-K38a, a miss at
-// the 12/s of reservas-ms (A7). Without `hit`, F-K38a serves every read (hit 1, assumption of
-// Delivery 3); `vary hit` is the sensitivity to that uncertain parameter (feedback (a) of
-// Delivery 3). Known result with hit 1: ln(100)/(40 − 8) + 60 = 203.9 ms (the branch of
-// reservas-ms exceeds the 50 ms of TRN and POS at the p99).
+// Scenario A (P1). The gateway calls the three services of C4 in parallel (F-K23a parallel;
+// fork: the request goes on when the slowest branch ends) and reservas-ms reads the
+// precalculated capacity from the cache through F-K38a: a hit is served at the 40/s of
+// F-K38a, a miss at the 12/s of reservas-ms (A7). Without `hit`, F-K38a serves every read
+// (hit 1, assumption of Delivery 3); `vary hit` is the sensitivity to that uncertain
+// parameter (feedback (a) of Delivery 3). Known result with hit 1:
+// ln(100)/(40 − 8) + 60 = 203.9 ms (the branch of reservas-ms exceeds the 50 ms of TRN and
+// POS at the p99). Artifact: chain C4 of Delivery 2, plus CACHE, which Delivery 2 added for
+// this scenario.
 scenario QS_F7 "F-QS7" attribute "rendimiento"
-  source "Puertos (CPS, PPS) y Carretera (RTS), a través de sus gateways"
-  stimulus "Ráfaga de 8 solicitudes de capacidad, turno y vagones por segundo durante 30 min (A5)"
-  artifact LGW, TRAD, RSV, TRN, POS, CACHE, F_K23a, F_K23b, F_K38a, F_K38b
-  environment "Temporada alta, operación normal del corredor"
-  response "Cada solicitud recibe capacidad, plataforma, ventana y arribo previsto, o un rechazo explícito"
+  source "Puertos del Caribe y del Pacífico, y Carretera"
+  stimulus "8 solicitudes/s de capacidad y asignación de vagones (SoS-K3a, SoS-K7a, SoS-K24a) durante 30 min (A5)"
+  artifact LGW, TRAD, RSV, TRN, POS, CACHE
+  environment "Temporada de exportación de fin de año"
+  response "Cada solicitud recibe confirmación o rechazo explícito"
   verified_by FQS7CapacityRequest
   // T4.4 (not modeled): hit >= 0.9 is a declared assumption; vary hit keeps the sensitivity.
   workload Requests rate 8 : LGW -> TRAD -> [RSV reads CACHE | TRN | POS] -> TRAD -> LGW
   vary hit F_K38a : 1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.2, 0
   measure p99_latency Requests <= 800 ms
   run 1800 warmup 60 replications 10
-scenario QS_F7R "F-QS7 (0 sin respuesta; tope de 660 ms)" attribute "rendimiento"
+// F-QS7, measure "0 solicitudes sin respuesta" (and the 660 ms bound of Delivery 2, §8.2).
+scenario QS_F7R "F-QS7 (0 solicitudes sin respuesta)" attribute "rendimiento"
+  source "Puertos del Caribe y del Pacífico, y Carretera"
+  stimulus "8 solicitudes/s de capacidad y asignación de vagones (SoS-K3a, SoS-K7a, SoS-K24a) durante 30 min (A5)"
+  artifact LGW, TRAD, RSV, TRN, POS, CACHE
+  environment "Temporada de exportación de fin de año"
+  response "Cada solicitud recibe confirmación o rechazo explícito"
   not_verifiable "Timeouts y reintentos en el workload (300 ms y un reintento, Entrega 2 §8.2); parcial: fracción con latencia > 300 ms"
 
-// Collateral property (P2). The broker model is the critical channel: 50 events/s reserved for
-// custody (1/s) and access readings (10/s), 11 events/s (A6). The low-criticality burst goes to
-// the other channel, which the model does not represent. Known result (stationary):
+// Artifact of Delivery 2: the broker (BRK); CRG, F-K19, F-K21, TRAD and LGW are the path of
+// the measure (from carga-ms to the Rail Gateway).
+// Collateral property (P2). THREAT TO VALIDITY: the burst of 245 events/s goes to the
+// telemetry channel, a separate capacity that the model does not write as a component (BRK
+// is the critical channel: 50 events/s reserved, A6). So the scenario simulates the critical
+// channel with its own load, custody 1/s and access readings 10/s (11 events/s), and not the
+// whole stimulus; the telemetry queue is QS_F3T, not verifiable. Known result (stationary):
 // ln(100)/(50 − 11) + 25 + 60 = 203.1 ms.
 scenario QS_F3 "F-QS3" attribute "rendimiento"
-  source "Concentrador de equipos de campo y servicios que publican telemetría de baja criticidad"
-  stimulus "Ráfaga de eventos de baja criticidad que lleva el broker a 245 eventos/s durante 15 min"
-  artifact CRG, F_K19, BRK, F_K21, TRAD, LGW
-  environment "Operación normal (20 eventos/s, A6) y ráfaga de telemetría"
-  response "Los eventos de custodia de carga-ms llegan al Rail Gateway a tiempo; la telemetría espera"
+  source "Terminales férreas en pico de cargue"
+  stimulus "Ráfaga de eventos de baja criticidad (pasos de tren y posiciones para el histórico) que lleva el broker a 245 eventos/s durante 15 min"
+  artifact BRK, CRG, F_K19, F_K21, TRAD, LGW
+  environment "Pico de fin de año. La ráfaga va al canal de telemetría (capacidad separada, no modelada); se simula el canal crítico con su carga de 11 eventos/s"
+  response "Los eventos de custodia llegan al Rail Gateway sin esperar detrás de la ráfaga; la telemetría puede demorarse"
   verified_by FQS3CustodyLatency
   workload Custody rate 1 : CRG -> BRK -> TRAD -> LGW
   workload Access rate 10 : CON -> BRK
   measure p99_latency Custody <= 500 ms
   run 900 warmup 100 replications 10
+// F-QS3, effect on the telemetry (Delivery 2: 30,600 events and about 160 s to drain).
 scenario QS_F3T "F-QS3 (cola de telemetría)" attribute "rendimiento"
+  source "Terminales férreas en pico de cargue"
+  stimulus "Ráfaga de eventos de baja criticidad (pasos de tren y posiciones para el histórico) que lleva el broker a 245 eventos/s durante 15 min"
+  artifact BRK, CRG, F_K19, F_K21, TRAD, LGW
+  environment "Pico de fin de año"
+  response "Los eventos de custodia llegan al Rail Gateway sin esperar detrás de la ráfaga; la telemetría puede demorarse"
   not_verifiable "Tasas que cambian en el tiempo (ráfaga de 15 min y luego carga normal) y canales con prioridad en el broker: 30.600 eventos, ~160 s de drenaje"
 
-// Scenario B (P3, P4, with P5 by analysis). Iteration 4 (T4.3): one job per truck. Carretera is down 4 h (14 400 s):
-// SoS-K18b stops updating and arribos-ms cannot reconcile, which the model writes as a fault
-// of ARR (C13: ARR has capacity), so the units wait in arribos-db (store) instead of being
-// lost. Trucks: 160 in 4 h (A3), one job per truck, from arribos-db through arribos-ms and the
-// translator to the Rail Gateway, where the query leaves by SoS-K18a (F-K33, F-K28a).
+// Artifact of Delivery 2: planificación, reservas-ms, carga-ms and Rail Gateway; ARR and ARRDB
+// are the elements that Delivery 2 added for this scenario (arribos-ms, arribos-db).
+// Scenario B (P3, P4, with P5 by analysis). Iteration 4 (T4.3): one job per truck.
+// Carretera is down 4 h (14 400 s): SoS-K18b stops updating and arribos-ms cannot
+// reconcile, which the model writes as a fault of ARR (C13: ARR has capacity), so the trucks
+// wait in arribos-db (store, before ARR) instead of being lost. Trucks: 160 in 4 h (A3), one
+// job per truck, from arribos-db through arribos-ms and the translator to the Rail Gateway,
+// where the query leaves by SoS-K18a (F-K33, F-K28a).
 // drain [F]: from the end of the outage until the last held truck is reconciled; lost counts
 // trucks (0 trucks lost means 0 units lost).
 // Sensitivity (D7): the same effective query rates as iteration 3, q_ef = 2 (agreed), 1.43,
 // 1.11, 1 (one retry per query) and 0.93/s, written as the rate of ARR, 1/(1/q_ef + 0.15 s).
 // Known result (Laboratory 5, section 4.6): backlog/(μ − λ) = 160/(1.538 − 0.0111) = 104.8 s.
+// Measures: detection <= 240 s (FQS1StaleData) and reconciliation <= 300 s (drain) are those
+// of Delivery 2. "0 lost" (P4) is not written in Delivery 2: it is derived from "reconcilia
+// custodia y reservas" of the response (what is not held cannot be reconciled).
 scenario QS_F1 "F-QS1" attribute "resiliencia"
-  source "Sistema de Transporte Carretero (RTS), a través de Coordinación Nacional (NCS)"
-  stimulus "Carretera cae 4 h: SoS-K18b deja de actualizar posición y ETA de los camiones con destino férreo"
-  artifact ARR, ARRDB, F_K28a, F_K28b, F_K29, F_K33, TRAD, LGW, SoS_K18a, SoS_K18b, SoS_K34
-  environment "Operación normal: 40 camiones/h hacia terminales férreas, 60 en tránsito (A3, A4)"
-  response "arribos-ms detecta el dato viejo, entra en modo degradado, guarda ETA y unidades pendientes en arribos-db y, al volver Carretera, reconcilia a ≤ 2 consultas/s"
-  verified_by SoSQS1M4, FQS1StaleData
+  source "Proveedor de nube de Carretera; el estímulo llega propagado por Coordinación Nacional"
+  stimulus "Las posiciones de los camiones con destino a terminales férreas dejan de actualizarse en SoS-K18b durante 4 h"
+  artifact PLN, RSV, CRG, LGW, ARR, ARRDB
+  environment "Pico del 1 de diciembre: 40 camiones/h hacia las terminales (A3) y ventanas de transferencia camión-tren activas; modo degradado"
+  response "Detecta la degradación, baja sus consultas a la tasa acordada, planifica cada ventana con la ETA estimada más 30 min de holgura, valida la llegada física con el lector de identificación de los accesos y despacha cada tren a su hora. Al volver el servicio, reconcilia custodia y reservas"
+  verified_by FQS1StaleData
   workload Trucks rate 0.011111 : ARRDB -> ARR -> TRAD -> LGW
   fault ARR down at 0 for 14400
   vary ARR : 1.538, 1.176, 0.952, 0.870, 0.816
@@ -485,56 +512,106 @@ scenario QS_F1 "F-QS1" attribute "resiliencia"
   measure lost Trucks <= 0 events
   run 16000 warmup 0 replications 20
 scenario QS_F1C "F-QS1 (0 trenes cancelados)" attribute "resiliencia"
-  not_verifiable "Reglas de comportamiento (regla de corte del despacho) y model checking sobre la máquina de estados del despacho"
+  source "Proveedor de nube de Carretera; el estímulo llega propagado por Coordinación Nacional"
+  stimulus "Las posiciones de los camiones con destino a terminales férreas dejan de actualizarse en SoS-K18b durante 4 h"
+  artifact PLN, RSV, CRG, LGW, ARR, ARRDB
+  environment "Pico del 1 de diciembre: 40 camiones/h hacia las terminales (A3) y ventanas de transferencia camión-tren activas; modo degradado"
+  response "Detecta la degradación, baja sus consultas a la tasa acordada, planifica cada ventana con la ETA estimada más 30 min de holgura, valida la llegada física con el lector de identificación de los accesos y despacha cada tren a su hora. Al volver el servicio, reconcilia custodia y reservas"
+  not_verifiable "Reglas de comportamiento (despacho con la ETA estimada más 30 min de holgura) y model checking sobre la máquina de estados del despacho"
+// F-QS1, measure "<= 2 consultas/s por SoS-K18a": in the simulation the query rate is an input
+// parameter (the capacity of ARR), not an output.
+scenario QS_F1Q "F-QS1 (≤ 2 consultas/s por SoS-K18a)" attribute "resiliencia"
+  source "Proveedor de nube de Carretera; el estímulo llega propagado por Coordinación Nacional"
+  stimulus "Las posiciones de los camiones con destino a terminales férreas dejan de actualizarse en SoS-K18b durante 4 h"
+  artifact PLN, RSV, CRG, LGW, ARR, ARRDB
+  environment "Pico del 1 de diciembre: 40 camiones/h hacia las terminales (A3) y ventanas de transferencia camión-tren activas; modo degradado"
+  response "Detecta la degradación, baja sus consultas a la tasa acordada, planifica cada ventana con la ETA estimada más 30 min de holgura, valida la llegada física con el lector de identificación de los accesos y despacha cada tren a su hora. Al volver el servicio, reconcilia custodia y reservas"
+  not_verifiable "Limitador de tasa por conector (tasa máxima acordada en SoS-K18a como restricción y su medida); en la simulación la tasa de consultas es un parámetro de entrada"
 
+// Artifact of Delivery 2: concentrator and interlocking (F-K11 named in the stimulus).
+// Iteration 4 adds the B units (T4.1) and the route state towards SAM and SAM-B (T4.2,
+// analysis FQS2Routes).
 scenario QS_F2 "F-QS2" attribute "tolerancia a fallas"
-  source "Concentrador de equipos de campo (falla interna)"
-  stimulus "El concentrador deja de enviar el estado de las secciones de vía, sin avisar"
-  artifact CON, CONB, F_K11, F_K11b, ILK, F_K6, PLN, F_K7, SAM, F_K37, SAMB
-  environment "Operación normal, con trenes circulando y rutas establecidas"
-  response "El enclavamiento detecta el silencio, trata las secciones como ocupadas (falla segura) y lo reporta; el SAM detecta el silencio del enclavamiento"
+  source "Falla interna de hardware del concentrador de equipos de campo"
+  stimulus "El concentrador se cuelga sin error y deja de entregar la ocupación de secciones por F-K11"
+  artifact CON, CONB, F_K11, F_K11b, ILK, ILKB, F_K7, SAM, F_K37, SAMB
+  environment "Pico de fin de año, con 40 trenes en circulación (A1)"
+  response "El enclavamiento distingue «sin cambios» de «concentrador caído», trata las secciones afectadas como ocupadas (falla segura), no fija rutas sobre ellas y lo informa a planificación por F-K6, que lo muestra en la consola del CCF"
   verified_by FQS2SilentConcentrator, FQS2Routes
-scenario QS_F2R "F-QS2 (0 rutas sobre estado viejo)" attribute "tolerancia a fallas"
-  not_verifiable "Máquina de estados del enclavamiento y model checking"
+scenario QS_F2R "F-QS2 (0 rutas sobre estado de más de 2 s)" attribute "tolerancia a fallas"
+  source "Falla interna de hardware del concentrador de equipos de campo"
+  stimulus "El concentrador se cuelga sin error y deja de entregar la ocupación de secciones por F-K11"
+  artifact CON, CONB, F_K11, F_K11b, ILK, ILKB, F_K7, SAM, F_K37, SAMB
+  environment "Pico de fin de año, con 40 trenes en circulación (A1)"
+  response "El enclavamiento distingue «sin cambios» de «concentrador caído», trata las secciones afectadas como ocupadas (falla segura), no fija rutas sobre ellas y lo informa a planificación por F-K6, que lo muestra en la consola del CCF"
+  not_verifiable "Máquina de estados del enclavamiento (edad del estado por sección) y model checking"
 
+// Artifact of Delivery 2: radio, on-board unit and SAM (F-K13a/b named in the stimulus).
+// Measures: cycle <= 1000 ms p99 (FQS4AuthorizationCycle). "La protección suma <= 40 ms" is the
+// difference of that analysis between rail-e1 (740 ms) and rail-e2 (780 ms): +20 ms on F-K13a
+// and on F-K13b.
 scenario QS_F4 "F-QS4" attribute "seguridad"
-  source "Atacante con acceso al canal de radio tren-tierra"
-  stimulus "Inyecta o repite reportes de posición y autoridades de movimiento falsos"
-  artifact OBU, F_K13a, RAD, SAM, F_K13b
-  environment "Operación normal en el corredor, 40 trenes (A1)"
-  response "El SAM y la unidad a bordo rechazan los mensajes no auténticos o repetidos, registran el intento y el ciclo de autorización sigue a tiempo"
+  source "Atacante externo con un transmisor cerca de la vía"
+  stimulus "Inyecta autoridades de movimiento falsas en F-K13b y reportes falsos en F-K13a"
+  artifact RAD, OBU, SAM, F_K13a, F_K13b
+  environment "Operación normal, bajo ataque"
+  response "La unidad a bordo y el SAM descartan todo mensaje sin autenticar. El tren conserva la última autoridad válida y, si caduca (10 s, A2), pasa a modo conservador. El SAM registra cada intento rechazado"
   verified_by FQS4AuthorizationCycle
-scenario QS_F4A "F-QS4 (0 falsos aceptados)" attribute "seguridad"
+scenario QS_F4A "F-QS4 (0 autoridades o reportes falsos aceptados)" attribute "seguridad"
+  source "Atacante externo con un transmisor cerca de la vía"
+  stimulus "Inyecta autoridades de movimiento falsas en F-K13b y reportes falsos en F-K13a"
+  artifact RAD, OBU, SAM, F_K13a, F_K13b
+  environment "Operación normal, bajo ataque"
+  response "La unidad a bordo y el SAM descartan todo mensaje sin autenticar. El tren conserva la última autoridad válida y, si caduca (10 s, A2), pasa a modo conservador. El SAM registra cada intento rechazado"
   not_verifiable "Identidad, credenciales y límites de confianza por conector; model checking del protocolo de autenticación"
 
-// The artifact is the ground and on-board authorization chain with the track (R5: S1 includes
-// the on-board unit).
+// Artifact of Delivery 2: the authorization chain C1 (sensors, on-board unit, radio, SAM, and their B replicas).
+// ILK and CON (the track) are an extension of Delivery 3: Delivery 2 counted the chain with the
+// track apart (section 8.3); here they are in the artifact so that S1 covers them (R5: S1 also
+// includes the on-board unit); ILKB and CONB are added by T4.1.
 scenario QS_F5 "F-QS5" attribute "disponibilidad"
-  source "Falla de hardware o software en la cadena de autorización"
-  stimulus "Falla un elemento de la cadena: sensores, unidad a bordo, radio, SAM, enclavamiento o concentrador"
+  source "Falla de hardware"
+  stimulus "Cae la radio de un tren, sus sensores o el servidor del SAM"
   artifact SEN, SENB, OBU, RAD, RADB, SAM, SAMB, ILK, ILKB, CON, CONB
-  environment "Operación normal, 40 trenes en circulación (A1, A8)"
-  response "La cadena sigue otorgando autoridades de movimiento; SAM-B toma el control si el SAM calla"
+  environment "Pico de fin de año, con 40 trenes en circulación (A1)"
+  response "Las autoridades se siguen emitiendo: el tren usa el camino de radio que funcione y compara sus dos sensores, y un SAM de respaldo toma el control con el último estado de cada tren"
   verified_by FQS5AuthorizationAvailability, FQS5WithTrack, FQS5Takeover
 
+// Measures of Delivery 2: components touched (the translator, modified, and the only consumer
+// of the new data, arribos-ms); 0 messages rejected by version during the coexistence;
+// deployment without stopping the Rail Gateway.
 scenario QS_F6 "F-QS6" attribute "evolucionabilidad"
-  source "Coordinación Nacional, dueña del modelo canónico"
-  stimulus "Publica la versión 2 del modelo canónico"
+  source "Los seis dueños, por el proceso conjunto de cambios"
+  stimulus "Se publica la versión 2 del modelo canónico (P4)"
   artifact TRAD, LGW
-  environment "Operación normal, con convivencia de las versiones 1 y 2"
-  response "Solo cambia el traductor; los servicios internos no se tocan"
-  not_verifiable "Versiones de interfaz por conector y comparación de dos modelos (change impact); C7 da evidencia parcial: todo pasa por TRAD"
+  environment "Cambio en curso, con v1 y v2 conviviendo mientras los demás migran"
+  response "El férreo adopta v2 cambiando el Traductor y acepta v1 y v2 durante la transición. Ningún servicio interno cambia, salvo el que usa el dato nuevo"
+  not_verifiable "Versiones de interfaz por conector, período de convivencia y comparación de dos modelos (change impact) para contar los componentes tocados y los mensajes rechazados por versión; despliegue en caliente. C7 da evidencia parcial: todo pasa por TRAD"
 
+// SoS-QS1 (shared core). Artifact of Delivery 2: the multimodal chain (the six gateways,
+// SoS-K5, SoS-K6, SoS-K17..K21, SoS-K32..K36); here, the elements of that chain that this model
+// writes, plus the Rail stage of M4 (arribos-ms). SoS-K6 is not in the Rail model. M3 is not a
+// measure of the Rail system.
 scenario QS_SoS1 "SoS-QS1 (M4)" attribute "resiliencia"
-  source "Sistema de Transporte Carretero (RTS)"
-  stimulus "Carretera vuelve tras 4 h de caída y reenvía lo que retuvo"
-  artifact RGW, SoS_K5, NCG, SoS_K34, CGW, ARR
-  environment "Recuperación tras la caída de Carretera, con la carga normal en curso"
-  response "Coordinación Nacional consolida, avisa a los consumidores y cada uno reconcilia en paralelo"
+  source "Falla en la infraestructura del proveedor de nube de Carretera"
+  stimulus "Cae el servicio que transmite la posición de los camiones por SoS-K6, 4 h el 1 de diciembre"
+  artifact RGW, SoS_K5, NCG, SoS_K34, CGW, LGW, ARR
+  environment "Pico logístico de fin de año, Carretera en modo degradado"
+  response "Emisión del estado degradado, detección tras 3P y aviso, estimaciones, operación con estimaciones, reenvío sin duplicados y reconciliación"
   verified_by SoSQS1M4
-scenario QS_SoS1M1 "SoS-QS1 (M1)" attribute "resiliencia"
+scenario QS_SoS1M1 "SoS-QS1 (M1: 0 trenes cancelados)" attribute "resiliencia"
+  source "Falla en la infraestructura del proveedor de nube de Carretera"
+  stimulus "Cae el servicio que transmite la posición de los camiones por SoS-K6, 4 h el 1 de diciembre"
+  artifact RGW, SoS_K5, NCG, SoS_K34, CGW, LGW, ARR
+  environment "Pico logístico de fin de año, Carretera en modo degradado"
+  response "Emisión del estado degradado, detección tras 3P y aviso, estimaciones, operación con estimaciones, reenvío sin duplicados y reconciliación"
   not_verifiable "Reglas de comportamiento (P5); model checking sobre la máquina de estados del despacho"
-scenario QS_SoS1M2 "SoS-QS1 (M2)" attribute "resiliencia"
+scenario QS_SoS1M2 "SoS-QS1 (M2: error de ETA ≤ ±30 min p95)" attribute "resiliencia"
+  source "Falla en la infraestructura del proveedor de nube de Carretera"
+  stimulus "Cae el servicio que transmite la posición de los camiones por SoS-K6, 4 h el 1 de diciembre"
+  artifact RGW, SoS_K5, NCG, SoS_K34, CGW, LGW, ARR
+  environment "Pico logístico de fin de año, Carretera en modo degradado"
+  response "Emisión del estado degradado, detección tras 3P y aviso, estimaciones, operación con estimaciones, reenvío sin duplicados y reconciliación"
   not_verifiable "Distribución del error de estimación de la ETA y su simulación"
 
 // Tactics of Delivery 2 (section 7), each linked to the scenario that motivates it and to the

@@ -33,14 +33,35 @@ SIMULATED = ('scenario {name} "{label}"\n'
              '  workload {name}Jobs rate 8 : {path}\n'
              '{extra}'
              '  measure {measure}\n'
-             '  run 600 warmup 60 replications 2\n')
+             '  run {run}\n')
 REQUEST = 'LGW -> TRAD -> RSV -> TRAD -> LGW'
 
 
-def simulated(name, label, comment, path=REQUEST, extra='', measure=None):
+RUN = '600 warmup 60 replications 2'
+
+# [F] A parallel connector for the cases with a fork (C5: a fork enters through one). It is not
+# F-K23a: rail-e1 visits reservas-ms, trenes-ms and posicion-ms in sequence (F-QS7 before the
+# parallelism of Delivery 2), which C5 rejects once F-K23a is parallel. The terminal console
+# calls two services at once instead; no workload of rail-e1 visits both in sequence.
+def parallel(name, first, second):
+    return (GLOBAL,
+            f'connector {name} nature dependency coupling blocking parallel\n'
+            f'  carries "Consultas simultáneas de la consola de terminal"\n'
+            f'  : CTF -> {first}, CTF -> {second}\n\n' + GLOBAL)
+
+
+FORK = 'LGW -> TRAD -> [RSV | TRN | POS] -> TRAD -> LGW'
+
+
+def simulated(name, label, comment, path=REQUEST, extra='', measure=None, run=RUN):
     return (SCENARIO, f'// Ill-formed ({label}): {comment}\n' + SIMULATED.format(
-        name=name, label=label, path=path, extra=extra,
+        name=name, label=label, path=path, extra=extra, run=run,
         measure=measure or f'p99_latency {name}Jobs <= 800 ms'))
+
+
+def mark(connector, old_line):
+    """Adds parallel to the first line of a connector of rail-e1, with a comment."""
+    return (old_line, f'// Ill-formed (C5): {connector}\n' + old_line.rstrip('\n') + ' parallel\n')
 
 CASES = {
     # C6: a second source of control commands over the interlocking.
@@ -156,9 +177,9 @@ CASES = {
 
     # ---- Delivery 4 ----
     # C12: a branch of the fork goes on to a component it has no connector with.
-    'c12-hop.arch': simulated(
+    'c12-hop.arch': [parallel('F_K2p', 'RSV', 'CRG'), simulated(
         'X12', 'C12', 'reservas-ms answers the gateway directly, not through the translator',
-        path='LGW -> TRAD -> [RSV | TRN | POS] -> LGW'),
+        path='CTF -> [RSV | CRG] -> LGW')],
     # C13: the translator fails, but it has no capacity (it is a fixed stage).
     'c13-fault.arch': simulated(
         'X13', 'C13', 'a fault on the translator, which has no capacity',
@@ -206,9 +227,9 @@ CASES = {
         'X5V', 'C5', 'vary hit on F-K22, which declares no read rate',
         extra='  vary hit F_K22 : 1, 0.5\n'),
     # C5 [F]: in a workload, a read by a component that is not a queue.
-    'c5-reads-queue.arch': simulated(
+    'c5-reads-queue.arch': [parallel('F_K2p', 'TRN', 'CRG'), simulated(
         'X5R', 'C5', 'trenes-ms reads trenes-db, but it is not a queue',
-        path='LGW -> TRAD -> [RSV | TRN reads TRNDB | POS] -> TRAD -> LGW'),
+        path='CTF -> [TRN reads TRNDB | CRG] -> CTF')],
     # C5 [F]: a queue twice in the same path.
     'c5-queue-twice.arch': simulated(
         'X5Q', 'C5', 'the request goes through reservas-ms twice',
@@ -224,6 +245,41 @@ CASES = {
         simulated('X5F', 'C5', 'drain, but nothing fails',
                   measure='drain X5FJobs <= 300 s'),
     ],
+    # ---- Delivery 4, after the validation ----
+    # C5 [F]: parallel on a data flow (the replies are not calls made at once).
+    'c5-parallel-kind.arch': mark(
+        'parallel on the replies of F-K23b, which is not a blocking dependency',
+        'connector F_K23b nature data_flow coupling blocking\n'),
+    # C5 [F]: parallel on a connector with a single link.
+    'c5-parallel-links.arch': mark(
+        'parallel on F-K3, which has a single link',
+        'connector F_K3 nature dependency coupling blocking\n'),
+    # C5 [F]: parallel on links that leave different sources.
+    'c5-parallel-source.arch': mark(
+        'parallel on F-K22, whose links leave four services',
+        'connector F_K22 nature dependency coupling blocking\n'),
+    # C5 [F]: a fork that no parallel connector enters (F-K23a is not parallel in rail-e1).
+    'c5-fork-parallel.arch': simulated(
+        'X5P', 'C5', 'a fork over the three services of C4, but F-K23a is not parallel in rail-e1',
+        path=FORK),
+    # C5 [F]: the three services of a parallel connector visited in sequence.
+    'c5-parallel-sequence.arch': [parallel('F_K2p', 'RSV', 'CRG'), simulated(
+        'X5S', 'C5', 'F-K2p is parallel, but the console visits its services one after another',
+        path='CTF -> RSV -> CTF -> CRG -> CTF')],
+    # C5 [F]: the store comes after the component that fails, so it holds nothing.
+    'c5-drain-order.arch': [
+        ('component LGW "Rail Gateway" in RLS tier T2 kind software\n',
+         'component LGW "Rail Gateway" in RLS tier T2 kind software store\n'),
+        simulated('X5O', 'C5', 'the store (the gateway) is after reservas-ms, which fails',
+                  path='RSV -> TRAD -> LGW', extra='  fault RSV down at 60 for 60\n',
+                  measure='drain X5OJobs <= 300 s'),
+    ],
+    # C14 [F]: a single replication gives no confidence interval.
+    'c14-replications.arch': simulated(
+        'X14N', 'C14', 'a single replication', run='600 warmup 60 replications 1'),
+    # C14 [F]: the warm-up takes the whole run.
+    'c14-warmup.arch': simulated(
+        'X14W', 'C14', 'the warm-up is as long as the run', run='600 warmup 600 replications 2'),
 }
 
 
