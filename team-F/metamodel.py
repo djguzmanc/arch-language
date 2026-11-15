@@ -80,15 +80,27 @@ def check_model(model):
         # C3. Every boundary connector is governed by an agreement among owners.
         if _boundary(k) and not k.agreement:
             _error(f'{k.name}: boundary connector without agreement', k)
-        # C5 [F, as C]. misses counts periods: it needs a period and is a whole number >= 1.
+        # C5 [F, as C]. misses counts periods: it needs a period (the grammar makes it a whole
+        # number >= 1).
         if k.misses and not k.period:
             _error(f'{k.name}: misses needs a period', k)
-        if k.misses and (k.misses < 1 or k.misses != int(k.misses)):
-            _error(f'{k.name}: misses must be a whole number of periods, at least 1', k)
         # C5 [F]. The capacity of a connector is the rate its source attains reading through
         # it, so it belongs to a blocking dependency only.
         if k.capacity and ('dependency' not in k.natures or k.coupling != 'blocking'):
             _error(f'{k.name}: capacity applies only to a blocking dependency', k)
+        # C5 [F]. A read rate belongs to one path: a single link, so a single source, which is a
+        # queue with a load below the rate (also when no analysis reads through it).
+        if k.capacity:
+            if len(k.links) != 1:
+                _error(f'{k.name}: a connector with capacity needs a single link, '
+                       f'it has {len(k.links)}', k)
+            source = k.links[0].path[0]
+            if not _is_queue(source) or not source.load:
+                _error(f'{k.name}: the source {source.name} of a connector with capacity must be '
+                       f'a queue with load', k)
+            if k.capacity <= source.load:
+                _error(f'{k.name}: capacity {k.capacity:g} is not above the load {source.load:g} '
+                       f'of its source {source.name}', k)
 
     # C4. A data store (T4) is accessed by dependency from a single component.
     for c in components:
@@ -167,9 +179,9 @@ def check_model(model):
     #   latency (A9).
     #   [F, as C] detection: a connector with period and misses (misses is required here, where
     #   the common language takes 1), a component with latency, or a budget.
-    #   [F] `Q reads S`, only in latency and without budget: Q is a queue, a blocking dependency
-    #   Q -> S declares a capacity above the load of Q, and a data flow S -> Q carries the reply.
-    #   It counts as a queue.
+    #   [F] `Q reads S`, only in latency and without budget: Q is a queue, a single blocking
+    #   dependency Q -> S declares a capacity (above the load of Q, checked on the connector),
+    #   and a data flow S -> Q carries the reply. It counts as a queue.
     for c in components:
         if _is_queue(c) and (c.latency or c.capacity <= c.load):
             _error(f'{c.name}: a queue needs a load below its capacity and no fixed latency', c)
@@ -191,9 +203,9 @@ def check_model(model):
                     if not rated:
                         _error(f'{a.name}: {r.name} reads {s.store.name} through no blocking '
                                f'dependency that declares capacity', a)
-                    if rated[0].capacity <= r.load:
-                        _error(f'{a.name}: {rated[0].name}: the load of {r.name} is not below '
-                               f'the capacity of the read', a)
+                    if len(rated) > 1:
+                        _error(f'{a.name}: {r.name} reads {s.store.name}: several dependencies '
+                               f'with capacity {sorted(k.name for k in rated)}', a)
                     if not _responses(model, r, s.store):
                         _error(f'{a.name}: {r.name} reads {s.store.name} with no data flow '
                                f'{s.store.name} -> {r.name} for the reply', a)
@@ -204,7 +216,7 @@ def check_model(model):
                         continue
                     if r.__class__.__name__ == 'Connector':
                         if not (r.period and r.misses):
-                            _error(f'{a.name}: {r.name} has no period and misses', a)
+                            _error(f'{a.name}: {r.name} needs period and misses (or a budget)', a)
                     elif not r.latency:
                         _error(f'{a.name}: {r.name} has no latency property', a)
                     continue
@@ -237,5 +249,6 @@ def check_model(model):
 def create_metamodel():
     grammar = os.path.join(os.path.dirname(__file__), 'arch.tx')
     mm = metamodel_from_file(grammar)
+    mm.register_obj_processors({'Misses': int})   # [F] the regex match is a string
     mm.register_model_processor(lambda model, metamodel: check_model(model))
     return mm

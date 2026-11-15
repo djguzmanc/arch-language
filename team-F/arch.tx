@@ -41,7 +41,7 @@ Connector:
                                             //     of the common language, which a connector admits or drains
   ('period' period=NUMBER)?                 // [F] ms between deliveries (cadence); the receiver detects a
                                             //     silence only after misses periods (detection)
-  ('misses' misses=NUMBER)?                 // [F, as C] missed periods before the receiver detects the
+  ('misses' misses=Misses)?                 // [F, as C] missed periods before the receiver detects the
                                             //     silence; needs period, and is required in detection
   ':' links+=Link[',']
 ;
@@ -86,6 +86,10 @@ Coupling: 'blocking' | 'supply' | 'sink';
 // [F, as C] detection: time from the last delivery until the silence is detected; a connector
 // counts period x misses plus its latency, a component its latency.
 Metric: 'availability' | 'latency' | 'detection';
+
+// [F] A whole number of periods, at least 1, so that misses 0 is a syntax error and an absent
+// misses is told apart from 0. Every value it accepts is also a NUMBER of the common language.
+Misses: /[1-9][0-9]*/;
 
 Comment:
   /\/\/.*$/

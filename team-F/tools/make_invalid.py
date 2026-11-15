@@ -82,15 +82,43 @@ CASES = {
         '  RSV reads RSVDB, TRN, POS, TRAD'),
     # C5 [F]: a read with a rate but no data flow that carries the reply.
     'c5-read-response.arch': [
-        ('  carries "Lecturas y escrituras de los datos de cada servicio"\n'
-         '  : TRN -> TRNDB, CRG -> CRGDB, POS -> POSDB, RSV -> RSVDB',
-         '  carries "Lecturas y escrituras de los datos de cada servicio"\n'
+        ('// Global connectors of the Rail Gateway (as in sos.arch)\n',
+         'connector F_K22x nature dependency coupling blocking\n'
+         '  carries "Lectura de la capacidad ya calculada"\n'
          '  capacity 40\n'
-         '  : TRN -> TRNDB, CRG -> CRGDB, POS -> POSDB, RSV -> RSVDB'),
+         '  : RSV -> RSVDB\n\n'
+         '// Global connectors of the Rail Gateway (as in sos.arch)\n'),
         ('  RSV, TRN, POS, TRAD',
-         '  // Ill-formed (C5): no data flow reservas-db -> reservas-ms carries the reply of F-K22\n'
+         '  // Ill-formed (C5): no data flow reservas-db -> reservas-ms carries the reply of F-K22x\n'
          '  RSV reads RSVDB, TRN, POS, TRAD'),
     ],
+    # C5 [F]: two read paths with different rates for the same read.
+    'c5-read-several.arch': [
+        ('// Global connectors of the Rail Gateway (as in sos.arch)\n',
+         'connector F_K22x nature dependency coupling blocking\n'
+         '  carries "Lectura de la capacidad ya calculada"\n'
+         '  capacity 40\n'
+         '  : RSV -> RSVDB\n'
+         'connector F_K22y nature dependency coupling blocking\n'
+         '  carries "Lectura de la capacidad por otra réplica"\n'
+         '  capacity 30\n'
+         '  : RSV -> RSVDB\n'
+         'connector F_K22z nature data_flow coupling blocking\n'
+         '  carries "Capacidad calculada (respuesta)"\n'
+         '  : RSVDB -> RSV\n\n'
+         '// Global connectors of the Rail Gateway (as in sos.arch)\n'),
+        ('  RSV, TRN, POS, TRAD',
+         '  // Ill-formed (C5): F-K22x and F-K22y give two rates for the same read\n'
+         '  RSV reads RSVDB, TRN, POS, TRAD'),
+    ],
+    # C5 [F, as C]: zero missed periods would detect a silence before it happens (syntax error).
+    'c5-misses-zero.arch': (
+        '  carries "Ocupación de secciones de vía en el formato interno, solo cuando cambia (A11)"\n'
+        '  : CON -> ILK',
+        '  carries "Ocupación de secciones de vía en el formato interno, solo cuando cambia (A11)"\n'
+        '  // Ill-formed (C5): misses is a whole number of periods, at least 1\n'
+        '  period 400 misses 0\n'
+        '  : CON -> ILK'),
 }
 
 if __name__ == '__main__':

@@ -1,8 +1,10 @@
-invalid/c5-detection.arch: REJECTED: FQS2SilentConcentrator: F_K11 has no period and misses
+invalid/c5-detection.arch: REJECTED: FQS2SilentConcentrator: F_K11 needs period and misses (or a budget)
+invalid/c5-misses-zero.arch: REJECTED: Expected Misses
 invalid/c5-misses.arch: REJECTED: F_K11: misses needs a period
 invalid/c5-percentile.arch: REJECTED: FQS3CustodyLatency: 2 fixed stages leave no exceedance for p99.9
 invalid/c5-queue-load.arch: REJECTED: RSV: a queue needs a load below its capacity and no fixed latency
 invalid/c5-read-response.arch: REJECTED: FQS7CapacityRequest: RSV reads RSVDB with no data flow RSVDB -> RSV for the reply
+invalid/c5-read-several.arch: REJECTED: FQS7CapacityRequest: RSV reads RSVDB: several dependencies with capacity ['F_K22x', 'F_K22y']
 invalid/c5-read.arch: REJECTED: FQS7CapacityRequest: RSV reads RSVDB through no blocking dependency that declares capacity
 invalid/c6-cycle.arch: REJECTED: F_K5: control commands form a cycle ILK -> PLN -> ILK
 invalid/c6-hierarchy.arch: REJECTED: ILK receives control commands from several sources ['CCF', 'PLN'] through ['F_K1x', 'F_K5']

@@ -38,7 +38,7 @@ Los artefactos quedan en `out/<modelo>/`:
 | `models/sos.arch` | Modelo conjunto, idéntico en las entregas de los seis equipos |
 | `models/rail-e1.arch` | Estructura de partida: Entrega 1 con las correcciones CR1–CR4 y las propiedades de la Entrega 2 |
 | `models/rail-e2.arch` | Estructura resultante de la Entrega 2 |
-| `invalid/` | Modelos mal formados de C5 (`c5-queue-load`, `c5-percentile`, `c5-misses`, `c5-detection`, `c5-read`, `c5-read-response`), C6 y C7, y `expected-rejections.txt` con el mensaje de cada uno |
+| `invalid/` | Modelos mal formados de C5 (`c5-queue-load`, `c5-percentile`, `c5-misses`, `c5-detection`, `c5-misses-zero`, `c5-read`, `c5-read-response`, `c5-read-several`), C6 y C7, y `expected-rejections.txt` con el mensaje de cada uno |
 | `CORRECCIONES-E3.md` | Correcciones al feedback de la Entrega 3, con las cifras antes y después |
 | `out/` | Artefactos generados |
 | `figures/` | Vistas renderizadas desde los `.mmd`, en SVG y PNG |
