@@ -37,10 +37,16 @@ from textx import get_model
 
 from metamodel import reads
 
-# Student t quantiles (0.975) by degrees of freedom, for 95 % confidence intervals
-T_975 = {1: 12.71, 2: 4.30, 3: 3.18, 4: 2.78, 5: 2.57, 6: 2.45, 7: 2.36, 8: 2.31,
-         9: 2.26, 10: 2.23, 15: 2.13, 20: 2.09, 30: 2.04, 40: 2.02, 60: 2.00}
+# Student t quantiles (0.975) by degrees of freedom, for 95 % confidence intervals: exact (to three
+# decimals) up to 30 and at the degrees of freedom used (39, 199, 999 replications − 1); between
+# two keys the smaller key is used, which widens the interval (conservative).
+T_975 = {1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571, 6: 2.447, 7: 2.365, 8: 2.306,
+         9: 2.262, 10: 2.228, 11: 2.201, 12: 2.179, 13: 2.160, 14: 2.145, 15: 2.131, 16: 2.120,
+         17: 2.110, 18: 2.101, 19: 2.093, 20: 2.086, 21: 2.080, 22: 2.074, 23: 2.069, 24: 2.064,
+         25: 2.060, 26: 2.056, 27: 2.052, 28: 2.048, 29: 2.045, 30: 2.042, 39: 2.023, 40: 2.021,
+         60: 2.000, 99: 1.984, 120: 1.980, 199: 1.972, 999: 1.962}
 
+SATISFIED = 'Satisfecha'                 # a threshold of 0 (lost <= 0) has no margin
 WITH_MARGIN = 'Satisfecha con margen'
 WITHOUT_MARGIN = 'Satisfecha sin margen'
 VIOLATED = 'Violada'
@@ -96,6 +102,15 @@ class Branch:
         self.prev_store = False
         self.pre = self.const = self.post = 0.0
         self.pre_connectors, self.post_connectors, self.constant = [], [], None
+
+    @classmethod
+    def synthetic(cls, name, mu=None, pre=0.0, const=0.0):
+        """A branch with no element of a model behind it (regression tests)."""
+        b = cls.__new__(cls)
+        b.name, b.queue, b.store, b.mu, b.read, b.prev_store = name, mu is not None, False, mu, None, False
+        b.pre, b.const, b.post = pre, const, 0.0
+        b.pre_connectors, b.post_connectors, b.constant = [], [], None
+        return b
 
 
 def _pairs(steps):
@@ -198,17 +213,24 @@ def simulate(scenario, seed, rates, capacities, hits=None, plans=None):
     One replication of the scenario. rates: workload -> rate; capacities: component -> rate;
     hits: read connector -> hit fraction (default: the model's); plans: workload -> plan
     (default: build_plan of its steps). Returns a Result.
+
+    Strictly event-driven: every arrival at a queue is an event of the heap, served when the
+    clock reaches it, so every FIFO queue sees its arrivals in time order (also the branches of a
+    fork that reach their queues at different times). Components without capacity take a fixed
+    time, which does not depend on the order of the jobs, and are crossed without an event.
     """
-    model = get_model(scenario)
+    if plans is None or hits is None:
+        model = get_model(scenario)
+        hits = dict(hits or {})
+        for k in _connectors(model):
+            if k.capacity and k.name not in hits:
+                hits[k.name] = hit_of(k)
+        if plans is None:
+            plans = {w.name: build_plan(model, w.steps) for w in scenario.workloads}
     rng = random.Random(seed)
     expo, rand = rng.expovariate, rng.random
-    hits = dict(hits or {})
-    for k in _connectors(model):
-        if k.capacity and k.name not in hits:
-            hits[k.name] = hit_of(k)
     workloads = list(scenario.workloads)
     names = [w.name for w in workloads]
-    plans = plans or {w.name: build_plan(model, w.steps) for w in workloads}
     down = {}
     for f in scenario.faults:
         down.setdefault(f.target.name, []).append((f.start, f.start + f.length))
@@ -218,6 +240,9 @@ def simulate(scenario, seed, rates, capacities, hits=None, plans=None):
     res.end_of_fault, res.duration = end_of_fault, duration
     free = {}
     recovered = res.recovered
+    plan_list = [plans[n] for n in names]
+    heap = []
+    seq = 0
 
     def down_until(name, t):
         for d0, d1 in down.get(name, ()):
@@ -226,7 +251,7 @@ def simulate(scenario, seed, rates, capacities, hits=None, plans=None):
         return None
 
     def serve(b, ta, held):
-        """FIFO single server: arrival at ta, returns the departure."""
+        """FIFO single server: arrival at ta (the current time of the clock), returns the departure."""
         mu = capacities.get(b.name, b.mu)
         if b.read is not None and rand() < hits[b.read[0]]:
             mu = b.read[1]
@@ -242,11 +267,7 @@ def simulate(scenario, seed, rates, capacities, hits=None, plans=None):
         free[b.name] = f
         return f
 
-    heap = []
-    seq = 0
-    # job: [workload index, start, held]
-    plan_list = [plans[n] for n in names]
-
+    # job: [workload index, start, held, lost]; join: [job, step, pending branches, latest end]
     def finish(job, t):
         w = names[job[0]]
         if job[2]:
@@ -257,50 +278,65 @@ def simulate(scenario, seed, rates, capacities, hits=None, plans=None):
             res.latencies[w].append(t - job[1])
 
     def lose(job):
-        if job[1] >= warmup:
-            res.lost[names[job[0]]] += 1
+        if not job[3]:
+            job[3] = True
+            if job[1] >= warmup:
+                res.lost[names[job[0]]] += 1
 
-    def advance(job, i, t, now, arrived):
-        """Runs the job from step i. t: time it is ready for step i, or, if arrived, the time
-        it reaches the queue of step i. Queues are served only in time order: a job that
-        reaches a queue after now waits in the heap."""
+    def branch_done(join, t):
+        join[2] -= 1
+        if t > join[3]:
+            join[3] = t
+        if join[2] == 0 and not join[0][3]:
+            start_step(join[0], join[1] + 1, join[3])
+
+    def start_step(job, i, t):
+        """The job is ready for step i at time t: every branch that reaches a queue becomes an
+        event at its own arrival time; the others are crossed at once."""
         nonlocal seq
         plan = plan_list[job[0]]
-        n = len(plan)
-        while i < n:
-            branches = plan[i]
-            if not arrived:
-                ta_queue = min((t + b.pre for b in branches if b.queue), default=None)
-                if ta_queue is not None and ta_queue > now:
-                    heapq.heappush(heap, (ta_queue, seq, job, i, t))
-                    seq += 1
-                    return
-            # faults first: a branch that is lost loses the job, one that is held holds it
-            hold = None
-            for b in branches:
-                ta = t + b.pre
-                d1 = down_until(b.name, ta)
-                if d1 is not None:
-                    if b.store or b.prev_store:
-                        hold = d1 if hold is None or d1 > hold else hold
-                    else:
-                        lose(job)
-                        return
-            if hold is not None:
-                job[2] = True
-                # ready again at the end of the fault, with the connector already crossed
-                heapq.heappush(heap, (hold, seq, job, i, hold - max(b.pre for b in branches)))
-                seq += 1
+        if i >= len(plan):
+            finish(job, t)
+            return
+        branches = plan[i]
+        join = [job, i, len(branches), t]
+        for b in branches:
+            if job[3]:
                 return
-            done = t
-            for b in branches:
-                ta = t + b.pre
-                f = serve(b, ta, job[2]) if b.queue else ta
-                f += b.const + b.post
-                if f > done:
-                    done = f
-            t, i, arrived = done, i + 1, False
-        finish(job, t)
+            ta = t + b.pre
+            if b.queue:
+                heapq.heappush(heap, (ta, seq, b, join))
+                seq += 1
+                continue
+            d1 = down_until(b.name, ta)         # [C13 forbids it; kept for robustness]
+            if d1 is not None:
+                if b.store or b.prev_store:
+                    job[2] = True
+                    ta = d1
+                else:
+                    lose(job)
+                    return
+            branch_done(join, ta + b.const + b.post)
+
+    def arrive(b, join, ta):
+        """A branch reaches its queue at ta, the current time."""
+        nonlocal seq
+        job = join[0]
+        d1 = down_until(b.name, ta)
+        if d1 is not None:
+            if job[3]:
+                return
+            if b.store or b.prev_store:
+                job[2] = True                   # held by the store until the fault ends
+                heapq.heappush(heap, (d1, seq, b, join))
+                seq += 1
+            else:
+                lose(job)
+            return
+        # a sibling branch may have lost the job: its request still loads this queue
+        f = serve(b, ta, job[2])
+        if not job[3]:
+            branch_done(join, f + b.const + b.post)
 
     nexts = []
     for w in workloads:
@@ -314,12 +350,11 @@ def simulate(scenario, seed, rates, capacities, hits=None, plans=None):
         if na >= duration:
             na = math.inf
         if heap and heap[0][0] <= na:
-            ta, _, job, i, t = heapq.heappop(heap)
-            advance(job, i, t, ta, True)
+            ta, _, b, join = heapq.heappop(heap)
+            arrive(b, join, ta)
         elif na < math.inf:
-            rate = rates[names[k]]
-            nexts[k] = na + expo(rate)
-            advance([k, na, False], 0, na, na, False)
+            nexts[k] = na + expo(rates[names[k]])
+            start_step([k, na, False, False], 0, na)
         else:
             break
     if end_of_fault is not None:
@@ -380,6 +415,10 @@ def _measure(m, scenario, res):
 # ─────────────────────────────────────────────
 
 def interval(values):
+    """Mean and 95 % CI with Student t. [F] A replication without data (e.g. warm-up ≥ run, so no
+    job counts for the p99) gives nan, and then the interval is nan: the outcome is inconclusive."""
+    if any(isinstance(v, float) and math.isnan(v) for v in values):
+        return math.nan, math.nan, math.nan
     mean = statistics.mean(values)
     if len(values) < 2:
         return mean, mean, mean
@@ -390,7 +429,14 @@ def interval(values):
 
 
 def outcome(low, high, threshold):
-    """Classification of Unit 6, Reading 2, §4.1, with a margin of 10 % of the threshold."""
+    """Classification of Unit 6, Reading 2, §4.1, with a margin of 10 % of the threshold.
+    [F] With a threshold of 0 (lost <= 0 events) there is no margin: satisfied or not."""
+    if math.isnan(low) or math.isnan(high):
+        return INCONCLUSIVE
+    if threshold == 0:
+        if high <= 0:
+            return SATISFIED
+        return VIOLATED if low > 0 else INCONCLUSIVE
     if high <= 0.9 * threshold:
         return WITH_MARGIN
     if high <= threshold:
@@ -492,16 +538,44 @@ def run_scenario(scenario, values=None, replications=None, plans=None, hits=None
 # [F] Known results (Laboratory 5, section 4.6) for the check of the simulator
 # ─────────────────────────────────────────────
 
-def _queue_rate(scenario, name, rates):
+def _plans(scenario, plans=None):
+    model = get_model(scenario)
+    out = {w.name: build_plan(model, w.steps) for w in scenario.workloads}
+    out.update(plans or {})
+    return out
+
+
+def _queue_rate(scenario, name, rates, plans=None):
     """Arrival rate at a queue: the rates of the workloads whose path goes through it."""
     total = 0.0
-    for w in scenario.workloads:
-        visits = sum(1 for s in w.steps for h in hops_of(s) if h.ref.name == name)
-        total += visits * rates[w.name]
+    for w, plan in _plans(scenario, plans).items():
+        visits = sum(1 for s in plan for b in s if b.name == name)
+        total += visits * rates[w]
     return total
 
 
-def known_result(scenario, m, value=None):
+def utilization(scenario, value=None, plans=None):
+    """[F] (queue, λ, mean service rate, ρ) of every queue of the scenario at one value of the
+    varied parameter; with a read, the mean service time is hit/μ_read + (1 − hit)/μ."""
+    rates, capacities, hits = scenario_point(scenario, value)
+    out, seen = [], set()
+    for plan in _plans(scenario, plans).values():
+        for s in plan:
+            for b in s:
+                if not b.queue or b.name in seen:
+                    continue
+                seen.add(b.name)
+                mu = capacities.get(b.name, b.mu)
+                mean = 1.0 / mu
+                if b.read is not None:
+                    h = hits[b.read[0]]
+                    mean = h / b.read[1] + (1 - h) / mu
+                lam = _queue_rate(scenario, b.name, rates, plans)
+                out.append((b.name, lam, 1.0 / mean, lam * mean))
+    return out
+
+
+def known_result(scenario, m, value=None, plans=None):
     """Closed-form value of a measure, in its unit, when the path allows it, with the formula
     used; else (None, reason). Cases:
       - p99_latency of a workload with a single M/M/1 queue (no fault; a read with hit 0 or 1):
@@ -511,12 +585,11 @@ def known_result(scenario, m, value=None):
         Laboratory 5, E[N]/(μ − λ), as a second reference;
       - lost: 0 if a store holds the jobs, else λ·length (expected).
     """
-    model = get_model(scenario)
     rates, capacities, hits = scenario_point(scenario, value)
     if m.workload is None and len(scenario.workloads) != 1:
         return None, 'medida sin workload'
     w = m.workload or scenario.workloads[0]
-    plan = build_plan(model, w.steps)
+    plan = _plans(scenario, plans)[w.name]
     queues = [(i, b) for i, s in enumerate(plan) for b in s if b.queue]
     if m.metric == 'p99_latency':
         if scenario.faults:
@@ -531,7 +604,7 @@ def known_result(scenario, m, value=None):
                 mu = q.read[1]
             elif h != 0:
                 return None, 'servicio hiperexponencial (0 < hit < 1)'
-        lam = _queue_rate(scenario, q.name, rates)
+        lam = _queue_rate(scenario, q.name, rates, plans)
         if lam >= mu:
             return None, 'cola inestable (λ ≥ μ)'
         total = 0.0
@@ -551,7 +624,7 @@ def known_result(scenario, m, value=None):
         if not (q.store or q.prev_store):
             return None, 'sin store: los trabajos se pierden'
         mu = capacities.get(q.name, q.mu)
-        lam = _queue_rate(scenario, q.name, rates)
+        lam = _queue_rate(scenario, q.name, rates, plans)
         n = rates[w.name] * f.length
         after = sum(max(b.pre + b.const + b.post + (0 if b.queue else 0) for b in s)
                     for s in plan[i + 1:]) + q.const + q.post
@@ -577,6 +650,28 @@ def known_result(scenario, m, value=None):
                         total += rates[w.name] * f.length
         return {'value': total, 'formula': 'store retiene: 0' if total == 0 else 'λ·duración'}, None
     return None, 'sin fórmula'
+
+
+def regression_fifo(replications=10, duration=3000.0):
+    """[F] Regression test of the event engine (finding of the validator): workload A forks into
+    [Q1 | Q2 reached 0.5 s later] and workload B goes straight to Q2 (5/s; Q2 serves 10/s and
+    receives 6/s). Each queue must serve its arrivals in time order, so the mean time of B in Q2
+    is that of an M/M/1, 1/(10 − 6) = 0.25 s, whatever the delay of A on its way to Q2. Returns
+    [(delay, mean, low, high, known, inside)]."""
+    from types import SimpleNamespace
+    wa, wb = SimpleNamespace(name='A', rate=1.0), SimpleNamespace(name='B', rate=5.0)
+    sc = SimpleNamespace(workloads=[wa, wb], faults=[], duration=duration, warmup=100.0)
+    rows = []
+    for pre in (0.5, 0.0):
+        plans = {'A': [[Branch.synthetic('Q1', 50.0), Branch.synthetic('Q2', 10.0, pre=pre)]],
+                 'B': [[Branch.synthetic('Q2', 10.0)]]}
+        means = []
+        for seed in range(1, replications + 1):
+            r = simulate(sc, seed, {'A': 1.0, 'B': 5.0}, {'Q1': 50.0, 'Q2': 10.0}, {}, plans)
+            means.append(statistics.mean(r.latencies['B']))
+        mean, low, high = interval(means)
+        rows.append((pre, mean, low, high, 0.25, low <= 0.25 <= high))
+    return rows
 
 
 # ─────────────────────────────────────────────

@@ -11,16 +11,15 @@ As tactics_check.py of team D, with the simulators of simulation.py:
 
 Usage: python3 tactics_check.py      (writes out/tactics/tactics.md)
 """
-import math
 import os
-from types import SimpleNamespace
 
 from metamodel import create_metamodel
-from simulation import (AVAILABILITY_SEED, MTTR_HOURS, analytic_availability, availability_factors,
+from verification import MC_REPLICATIONS, MC_YEARS, check_availability
+from simulation import (MTTR_HOURS, analytic_availability, availability_factors,
                         availability_margin, build_plan, interval, known_result, outcome,
                         outcome_availability, run_point, simulate_factors)
 
-MC_YEARS, MC_REPLICATIONS = 20, 40
+
 BETAS = [0.0, 0.02, 0.05, 0.08, 0.10, 0.12, 0.15, 0.20]
 
 
@@ -28,22 +27,28 @@ def _by_name(items, name):
     return next(x for x in items if x.name == name)
 
 
-def _sequential(model):
-    """The path of rail-e1 with the cache of rail-e2: the services are called one after the
-    other, each through the translator (LGW → TRAD → RSV reads CACHE → TRAD → TRN → TRAD → POS →
-    TRAD → LGW)."""
-    c = {e.name: e for e in model.elements}
+def serialize(steps):
+    """[F] The path without parallel calls, derived from the fork of the model: the branches run
+    one after the other, each reply coming back through the step after the fork, from which the
+    next call leaves: P -> [B1 | ... | Bk] -> N becomes P -> B1 -> N -> B2 -> N -> ... -> Bk -> N.
+    With P = N = TRAD this is the path of rail-e1."""
+    out = []
+    for i, step in enumerate(steps):
+        if step.__class__.__name__ != 'Fork':
+            out.append(step)
+            continue
+        if i + 1 >= len(steps):
+            raise ValueError('a fork at the end of the path has no step to come back through')
+        back = steps[i + 1]
+        for j, branch in enumerate(step.branches):
+            out.append(branch)
+            if j < len(step.branches) - 1:
+                out.append(back)
+    return out
 
-    def hop(name, store=None):
-        return SimpleNamespace(ref=c[name], store=c[store] if store else None)
-    return [hop('LGW'), hop('TRAD'), hop('RSV', 'CACHE'), hop('TRAD'), hop('TRN'), hop('TRAD'),
-            hop('POS'), hop('TRAD'), hop('LGW')]
 
-
-def _known_sequential(hit):
-    """M/M/1 at 40/s (hit 1) or 12/s (hit 0) with 8/s, plus TRAD 60 + TRN 50 + POS 50 ms."""
-    mu = 40.0 if hit == 1 else 12.0
-    return 1000 * (math.log(100) / (mu - 8.0)) + 160.0
+def _path(steps):
+    return ' → '.join(h.ref.name + (f' reads {h.store.name}' if h.store else '') for h in steps)
 
 
 def contribution_p1(mm, lines):
@@ -51,27 +56,28 @@ def contribution_p1(mm, lines):
     s = _by_name(e2.scenarios, 'QS_F7')
     m = s.measures[0]
     w = s.workloads[0]
-    plans_seq = {w.name: build_plan(e2, _sequential(e2))}
+    serial = serialize(list(w.steps))
+    plans_seq = {w.name: build_plan(e2, serial)}
     variants = [('rail-e2: caché + paralelo (hit 1)', 1.0, None),
                 ('sin caché (hit 0), con paralelo', 0.0, None),
-                ('con caché (hit 1), sin paralelo (camino secuencial)', 1.0, plans_seq),
+                ('con caché (hit 1), sin paralelo (camino en serie)', 1.0, plans_seq),
                 ('sin caché ni paralelo (≈ rail-e1)', 0.0, plans_seq)]
     lines += ['## 1. Contribución de cada táctica de la Entrega 2 a P1 (F-QS7, rail-e2)', '',
               f'{s.replications} réplicas (semillas 1–{s.replications}), corrida {s.duration:g} s, '
-              f'calentamiento {s.warmup:g} s; umbral ≤ {m.threshold:g} ms.', '',
+              f'calentamiento {s.warmup:g} s; umbral ≤ {m.threshold:g} ms. Sin caché = hit 0 en '
+              f'{s.vary.target.name if s.vary else "el conector de lectura"}. Sin paralelo = las '
+              f'ramas del fork del modelo en serie: {_path(serial)}. El resultado conocido sale de '
+              'known_result sobre el plan de cada variante (una cola M/M/1 más las constantes).', '',
               '| Estructura | Estimación | IC 95 % | Conocido | ¿Dentro? | Resultado |',
               '|---|---|---|---|---|---|']
     for label, hit, plans in variants:
         samples = run_point(s, hit, plans=plans)[m]
         mean, low, high = interval(samples)
-        if plans is None:
-            k, _ = known_result(s, m, hit)
-            known = k['value'] if k else None
-        else:
-            known = _known_sequential(hit)
+        k, why = known_result(s, m, hit, plans=plans)
+        known = k['value'] if k else None
         inside = '—' if known is None else ('sí' if low <= known <= high else 'no')
         lines.append(f'| {label} | {mean:.1f} ms | [{low:.1f}; {high:.1f}] | '
-                     f'{"—" if known is None else f"{known:.1f} ms"} | {inside} | '
+                     f'{why if known is None else f"{known:.1f} ms"} | {inside} | '
                      f'{outcome(low, high, m.threshold)} |')
     lines.append('')
 
@@ -101,7 +107,8 @@ def contribution_t41(mm, lines):
                 out.append(factor)
         return out
 
-    seed = AVAILABILITY_SEED + 1        # the seed of FQS5WithTrack in out/rail-e4 (second analysis)
+    # the seed that verification.py gives to FQS5WithTrack in out/rail-e4
+    seed = next(row[2] for row in check_availability(e4) if row[1].name == a.name)
     neither = without('ILK')
     neither = [(_by_name(e4.elements, 'CON').availability, 1, 0.0) if 'CON' in g else f
                for f, g in zip(neither, names)]
