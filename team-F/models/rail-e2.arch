@@ -53,8 +53,9 @@ component ILK "Enclavamiento" in RLS tier T3 kind hardware_software availability
 component TRN "trenes-ms" in RLS tier T3 kind software latency 50
 component CRG "carga-ms" in RLS tier T3 kind software
 component POS "posicion-ms" in RLS tier T3 kind software latency 50
-// Modified (F-QS7): reads the precalculated capacity from the cache (40 requests/s, A7)
-component RSV "reservas-ms" in RLS tier T3 kind software capacity 40 load 8
+// Modified (F-QS7): reads the precalculated capacity from the cache through F-K38a, at the
+// 40 requests/s that F-K38a declares (A7). Computing it on each request it still serves 12/s
+component RSV "reservas-ms" in RLS tier T3 kind software capacity 12 load 8
 // Added (F-QS1): its 300 s budget of SoS-QS1 (M4) is written as a budget in the analysis
 component ARR "arribos-ms" in RLS tier T3 kind software
 
@@ -111,7 +112,7 @@ connector F_K10 nature data_flow coupling supply
   : LID -> CON
 connector F_K11 nature data_flow coupling supply
   carries "Resumen del estado cada 0,4 s con marca de tiempo, además de los cambios"
-  latency 1200 period 400
+  period 400 misses 3
   : CON -> ILK
 connector F_K12 nature event_notification coupling sink
   carries "Paso de trenes; las lecturas de acceso van al canal crítico"
@@ -211,13 +212,14 @@ connector F_K35 nature data_flow coupling supply
   : SENB -> OBU
 connector F_K36 nature data_flow coupling supply
   carries "Latido cada 0,5 s y último estado de autoridad de cada tren"
-  period 500
+  period 500 misses 3
   : SAM -> SAMB
 connector F_K37 nature event_notification coupling supply
   carries "Estado de rutas hacia el respaldo"
   : ILK -> SAMB
 connector F_K38a nature dependency coupling blocking
   carries "Consulta de capacidad calculada"
+  capacity 40
   : RSV -> CACHE
 connector F_K38b nature data_flow coupling blocking
   carries "Capacidad calculada (respuesta de F-K38a)"
@@ -317,12 +319,17 @@ analysis FQS5AuthorizationAvailability scenario "F-QS5" availability target 99.9
 // so the chain counted in series stays below the target (Delivery 2, section 8.3).
 analysis FQS5WithTrack scenario "F-QS5 (con vía)" availability target 99.95 :
   [SEN | SENB] beta 0.10, OBU, [RAD | RADB] beta 0.10, [SAM | SAMB] beta 0.10, ILK, CON
-// F-QS7: the gateway calls the three services of C4 in parallel; reservas-ms reads the cache.
+// F-QS7: the gateway calls the three services of C4 in parallel; reservas-ms reads the cache
+// through F-K38a (reply by F-K38b), so its queue serves at the 40 requests/s of the read (A7).
 analysis FQS7CapacityRequest scenario "F-QS7" latency percentile 99 target 800 :
-  [RSV | TRN | POS], TRAD
-// F-QS2: three lost digests (tope de silencio of F-K11) plus detection in the interlocking.
-analysis FQS2SilentConcentrator scenario "F-QS2" latency target 2000 :
+  [RSV reads CACHE | TRN | POS], TRAD
+// F-QS2: three lost digests of F-K11 (misses x period) plus detection in the interlocking.
+analysis FQS2SilentConcentrator scenario "F-QS2" detection target 2000 :
   F_K11, ILK
+// F-QS5 (takeover): SAM-B takes control after three missed heartbeats of F-K36 (3 x 0.5 s)
+// plus 1 s of switchover, written as a budget of SAM-B (A9).
+analysis FQS5Takeover scenario "F-QS5 (toma de control)" detection target 5000 :
+  F_K36, SAMB = 1000
 // SoS-QS1 (M4) from the Rail side: SoS-K34 carries the "restablecido" notice to the Rail Gateway
 // and arribos-ms reconciles in parallel with the other consumers (CGW stands for them, as in
 // sos.arch). Budgets of section 3.6.2 (P1) written with = so that SoS-K34 stays as in sos.arch.

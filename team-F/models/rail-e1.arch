@@ -251,8 +251,9 @@ analysis FQS5AuthorizationAvailability scenario "F-QS5" availability target 99.9
 // out because they feed the SAM by supply (section 5, F-QS5), and counted this variant in 8.3.
 analysis FQS5WithTrack scenario "F-QS5 (con vía)" availability target 99.95 :
   SEN, OBU, RAD, SAM, ILK, CON
-// F-QS2: F-K11 has no cadence nor timestamp (A11), so its silence never becomes a detection.
-analysis FQS2SilentConcentrator scenario "F-QS2" latency target 2000 :
+// F-QS2: F-K11 has no cadence nor timestamp (A11), so its silence never becomes a detection:
+// with no period nor misses its stage is unbounded.
+analysis FQS2SilentConcentrator scenario "F-QS2" detection target 2000 :
   F_K11 = unbounded, ILK
 // F-QS7: capacity request answered in series by the three services of C4.
 analysis FQS7CapacityRequest scenario "F-QS7" latency percentile 99 target 800 :

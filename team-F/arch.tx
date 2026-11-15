@@ -36,7 +36,13 @@ Connector:
   ('agreement' agreement=STRING)?
   ('availability' availability=NUMBER)?
   ('latency' latency=NUMBER)?
-  ('period' period=NUMBER)?                 // [F] ms between deliveries: a silence longer than this is a failure
+  ('capacity' capacity=NUMBER)?             // [F] only in a blocking dependency: requests/s its source
+                                            //     attains reading through it (A7); not the event_capacity
+                                            //     of the common language, which a connector admits or drains
+  ('period' period=NUMBER)?                 // [F] ms between deliveries (cadence); the receiver detects a
+                                            //     silence only after misses periods (detection)
+  ('misses' misses=NUMBER)?                 // [F, as C] missed periods before the receiver detects the
+                                            //     silence; needs period, and is required in detection
   ':' links+=Link[',']
 ;
 
@@ -59,13 +65,16 @@ Factor:
 // [F] A factor may carry its own budget for a latency analysis (= value, in ms), so a budget
 // agreed at the global level is used without changing the element as written in sos.arch,
 // or be declared unbounded (= unbounded) when the structure gives that stage no limit.
+// [F] In latency, `Q reads S` is the queue Q serving while it reads S by a blocking dependency:
+// its rate is the capacity of that dependency instead of the capacity of Q (A7).
 Single:
-  ref=[Element] ('=' (unbounded?='unbounded' | value=NUMBER))?
+  ref=[Element] ('reads' store=[Component])? ('=' (unbounded?='unbounded' | value=NUMBER))?
 ;
 
 // In availability, a group is a set of replicas with common-cause fraction beta (Lab 4);
 // without beta the replicas are independent (beta = 0).
 // [F] In latency, a group is a set of stages that run in parallel: its maximum counts.
+// [F, as C] In detection too.
 Group:
   '[' alternatives+=Single['|'] ']' ('beta' beta=NUMBER)?
 ;
@@ -74,7 +83,9 @@ Tier: 'T1' | 'T2' | 'T3' | 'T4' | 'T5';
 Kind: 'hardware_software' | 'hardware' | 'software' | 'physical';
 Nature: 'data_flow' | 'control_command' | 'dependency' | 'event_notification';
 Coupling: 'blocking' | 'supply' | 'sink';
-Metric: 'availability' | 'latency';
+// [F, as C] detection: time from the last delivery until the silence is detected; a connector
+// counts period x misses plus its latency, a component its latency.
+Metric: 'availability' | 'latency' | 'detection';
 
 Comment:
   /\/\/.*$/

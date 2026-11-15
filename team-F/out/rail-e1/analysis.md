@@ -60,12 +60,12 @@ Chain availability: **99.68 %** (28.0 h/year); target 99.95: **NOT met**
 
 ## FQS2SilentConcentrator (Scenario F-QS2)
 
-| Stage | Budget |
-|-------|--------|
+| Stage | Time to detect |
+|-------|----------------|
 | F_K11 | unbounded |
 | ILK | 300 ms |
 
-Chain latency: **unbounded**; target 2000: **NOT met**
+Detection time: **unbounded**; target 2000: **NOT met**
 
 ## FQS7CapacityRequest (Scenario F-QS7)
 

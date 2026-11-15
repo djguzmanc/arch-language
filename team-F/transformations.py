@@ -1,7 +1,9 @@
 import math
 import os
 
-from metamodel import FIXED_EXCEEDANCE, singles
+from textx import get_model
+
+from metamodel import FIXED_EXCEEDANCE, reads, singles
 
 NATURE = {
     'data_flow': 'data flow',
@@ -109,12 +111,14 @@ def _unavailability(factor):
 def _base_latency(analysis):
     """Laboratory 4: a chain of single factors, each with its latency property."""
     return all(f.__class__.__name__ == 'Single' and not f.value and not f.unbounded
-               and f.ref.latency for f in analysis.factors) and not analysis.percentile
+               and not f.store and f.ref.latency for f in analysis.factors) \
+        and not analysis.percentile and analysis.metric == 'latency'
 
 
 def _stage(single, queue_exceedance):
     """[F] Latency of one stage in ms and its description. A queue takes the percentile left
-    for it: -ln(e) x mean, with mean = 1 / (capacity - load) (A10)."""
+    for it: -ln(e) x mean, with mean = 1 / (capacity - load) (A10). A stage `Q reads S` is the
+    queue Q serving at the capacity of the blocking dependency through which it reads S (A7)."""
     ref = single.ref
     if single.unbounded:
         return math.inf, 'unbounded'
@@ -122,12 +126,21 @@ def _stage(single, queue_exceedance):
         return single.value, f'{single.value:g} ms (budget)'
     if ref.latency:
         return ref.latency, f'{ref.latency:g} ms'
-    mean = 1000 / (ref.capacity - ref.load)
+    capacity, via = ref.capacity, ''
+    if single.store:
+        k = next(k for k in reads(get_model(single), ref, single.store) if k.capacity)
+        capacity = k.capacity
+        via = f'through {k.name}: {capacity:g}/s instead of {ref.capacity:g}/s; '
+    mean = 1000 / (capacity - ref.load)
     if queue_exceedance is None:
-        return mean, f'mean 1/({ref.capacity:g} − {ref.load:g}) = {mean:.1f} ms'
+        return mean, f'{via}mean 1/({capacity:g} − {ref.load:g}) = {mean:.1f} ms'
     k = -math.log(queue_exceedance / 100)
-    return k * mean, (f'queue: mean 1/({ref.capacity:g} − {ref.load:g}) = {mean:.1f} ms; '
+    return k * mean, (f'{via}queue: mean 1/({capacity:g} − {ref.load:g}) = {mean:.1f} ms; '
                       f'p{100 - queue_exceedance:g} = {k:.2f} × mean = {k * mean:.1f} ms')
+
+
+def _name(single):
+    return single.ref.name + (f' reads {single.store.name}' if single.store else '')
 
 
 def _general_latency(analysis):
@@ -137,27 +150,62 @@ def _general_latency(analysis):
     queue_exceedance = None
     if analysis.percentile:
         stages = [s for f in analysis.factors for s in singles(f)]
-        fixed = sum(1 for s in stages if s.value or s.unbounded or s.ref.latency)
+        fixed = sum(1 for s in stages if not s.store and (s.value or s.unbounded or s.ref.latency))
         queues = len(stages) - fixed
         if queues:
             queue_exceedance = ((100 - analysis.percentile) - fixed * FIXED_EXCEEDANCE) / queues
     rows, result = [], 0
     for f in analysis.factors:
         if f.__class__.__name__ == 'Group':
-            stages = [(s.ref.name, *_stage(s, queue_exceedance)) for s in f.alternatives]
+            stages = [(_name(s), *_stage(s, queue_exceedance)) for s in f.alternatives]
             value = max(v for _, v, _ in stages)
             names = ' ‖ '.join(f'{n} ({d})' for n, _, d in stages)
             shown = 'unbounded' if math.isinf(value) else f'{value:.1f} ms'
             rows.append(f'| {names} | {shown} (maximum, in parallel) |')
         else:
             value, description = _stage(f, queue_exceedance)
-            rows.append(f'| {f.ref.name} | {description} |')
+            rows.append(f'| {_name(f)} | {description} |')
         result += value
     header = ['| Stage | Budget |', '|-------|--------|']
     label = f' p{analysis.percentile:g}' if analysis.percentile else ''
     shown = 'unbounded' if math.isinf(result) else f'{result:.0f} ms'
     summary = f'Chain latency{label}: **{shown}**'
     return header, rows, summary, result <= analysis.target
+
+
+def _detection_stage(single):
+    """[F, as C] Time a stage adds to the detection: a connector, period x misses plus its
+    latency if it declares one; a component, its latency; a budget or unbounded as in latency."""
+    r = single.ref
+    if single.unbounded:
+        return math.inf, 'unbounded'
+    if single.value:
+        return single.value, f'{single.value:g} ms (budget)'
+    if r.__class__.__name__ == 'Connector':
+        value = r.period * r.misses + (r.latency or 0)
+        text = f'{r.misses:g} missed × {r.period:g} ms'
+        if r.latency:
+            text += f' + {r.latency:g} ms'
+        return value, f'{text} = {value:g} ms'
+    return r.latency, f'{r.latency:g} ms'
+
+
+def _detection(analysis):
+    """[F, as C] Sum of stages; a group runs in parallel and counts its maximum. No percentile."""
+    rows, result = [], 0
+    for f in analysis.factors:
+        stages = [(s.ref.name, *_detection_stage(s)) for s in singles(f)]
+        value = max(v for _, v, _ in stages)
+        if f.__class__.__name__ == 'Group':
+            names = ' ‖ '.join(f'{n} ({d})' for n, _, d in stages)
+            shown = 'unbounded' if math.isinf(value) else f'{value:g} ms'
+            rows.append(f'| {names} | {shown} (maximum, in parallel) |')
+        else:
+            rows.append(f'| {stages[0][0]} | {stages[0][2]} |')
+        result += value
+    header = ['| Stage | Time to detect |', '|-------|----------------|']
+    shown = 'unbounded' if math.isinf(result) else f'{result:g} ms'
+    return header, rows, f'Detection time: **{shown}**', round(result, 6) <= analysis.target
 
 
 def analyze(analysis):
@@ -175,6 +223,8 @@ def analyze(analysis):
         hours = (100 - result) / 100 * 8760
         summary = f'Chain availability: **{result:.2f} %** ({hours:.1f} h/year)'
         met = round(result, 6) >= analysis.target
+    elif analysis.metric == 'detection':
+        header, rows, summary, met = _detection(analysis)
     elif _base_latency(analysis):
         result = sum(f.ref.latency for f in analysis.factors)
         for f in analysis.factors:

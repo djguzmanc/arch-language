@@ -2,6 +2,8 @@
 
 Entrega 3 del equipo F (Arquitectura de Software a Gran Escala, 2026-II). El informe es
 `team-F-p3.pdf`; las adaptaciones, restricciones, convenciones y resultados están explicados allí.
+Las correcciones posteriores al feedback de la Entrega 3 (métrica `detection`, propiedad `misses`,
+lectura `Q reads S`) están en `CORRECCIONES-E3.md`; el informe no las incluye.
 
 ## Ejecución
 
@@ -29,14 +31,15 @@ Los artefactos quedan en `out/<modelo>/`:
 
 | Archivo | Contenido |
 |---------|-----------|
-| `arch.tx` | Gramática (M2). Las adaptaciones del equipo están marcadas `[F]` |
-| `metamodel.py` | Restricciones C1–C7 |
+| `arch.tx` | Gramática (M2). Las adaptaciones del equipo están marcadas `[F]`; las alineadas con el lenguaje común, `[F, como C]` (en el código, `[F, as C]`) |
+| `metamodel.py` | Restricciones C1–C7. C5 incluye `misses`, `detection`, `capacity` de conector y `Q reads S` |
 | `transformations.py` | Tabla de conectores, vistas C&C y análisis |
 | `generation.py` | Lee cada modelo, verifica que sea conforme y aplica las transformaciones. Sin argumentos procesa todo `models/` |
 | `models/sos.arch` | Modelo conjunto, idéntico en las entregas de los seis equipos |
 | `models/rail-e1.arch` | Estructura de partida: Entrega 1 con las correcciones CR1–CR4 y las propiedades de la Entrega 2 |
 | `models/rail-e2.arch` | Estructura resultante de la Entrega 2 |
-| `invalid/` | Modelos mal formados de C5, C6 y C7, y `expected-rejections.txt` con el mensaje de cada uno |
+| `invalid/` | Modelos mal formados de C5 (`c5-queue-load`, `c5-percentile`, `c5-misses`, `c5-detection`, `c5-read`, `c5-read-response`), C6 y C7, y `expected-rejections.txt` con el mensaje de cada uno |
+| `CORRECCIONES-E3.md` | Correcciones al feedback de la Entrega 3, con las cifras antes y después |
 | `out/` | Artefactos generados |
 | `figures/` | Vistas renderizadas desde los `.mmd`, en SVG y PNG |
 | `INFORME.md` | Fuente del informe |

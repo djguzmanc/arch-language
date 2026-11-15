@@ -23,7 +23,22 @@ def singles(factor):
 
 
 def _is_queue(element):
-    return bool(getattr(element, 'capacity', 0))
+    # [F] Only a component is a queue: the capacity of a connector is a read rate (A7).
+    return element.__class__.__name__ == 'Component' and bool(element.capacity)
+
+
+def reads(model, source, store):
+    """[F] Blocking dependency connectors with a link from source to store."""
+    return [k for k in model.elements if k.__class__.__name__ == 'Connector'
+            and 'dependency' in k.natures and k.coupling == 'blocking'
+            and any(link.path[0] is source and link.path[-1] is store for link in k.links)]
+
+
+def _responses(model, source, store):
+    """[F] Data flow connectors with a link from store back to source (the reply of the read)."""
+    return [k for k in model.elements if k.__class__.__name__ == 'Connector'
+            and 'data_flow' in k.natures
+            and any(link.path[0] is store and link.path[-1] is source for link in k.links)]
 
 
 def _cycle(graph):
@@ -65,6 +80,15 @@ def check_model(model):
         # C3. Every boundary connector is governed by an agreement among owners.
         if _boundary(k) and not k.agreement:
             _error(f'{k.name}: boundary connector without agreement', k)
+        # C5 [F, as C]. misses counts periods: it needs a period and is a whole number >= 1.
+        if k.misses and not k.period:
+            _error(f'{k.name}: misses needs a period', k)
+        if k.misses and (k.misses < 1 or k.misses != int(k.misses)):
+            _error(f'{k.name}: misses must be a whole number of periods, at least 1', k)
+        # C5 [F]. The capacity of a connector is the rate its source attains reading through
+        # it, so it belongs to a blocking dependency only.
+        if k.capacity and ('dependency' not in k.natures or k.coupling != 'blocking'):
+            _error(f'{k.name}: capacity applies only to a blocking dependency', k)
 
     # C4. A data store (T4) is accessed by dependency from a single component.
     for c in components:
@@ -138,18 +162,52 @@ def check_model(model):
     #   availability: the availability property;
     #   latency: a latency, a budget (= value) or, as a queue, capacity above its load;
     #   percentile: the exceedance of the fixed stages leaves room for the queues (Boole, A12).
-    #   a budget (= value or = unbounded) and percentile only apply to latency, and a budget
-    #   counts as a fixed stage with the same 0.1 % of exceedance as a latency (A9).
+    #   a budget (= value or = unbounded) applies to latency and detection, percentile only to
+    #   latency, and a budget counts as a fixed stage with the same 0.1 % of exceedance as a
+    #   latency (A9).
+    #   [F, as C] detection: a connector with period and misses (misses is required here, where
+    #   the common language takes 1), a component with latency, or a budget.
+    #   [F] `Q reads S`, only in latency and without budget: Q is a queue, a blocking dependency
+    #   Q -> S declares a capacity above the load of Q, and a data flow S -> Q carries the reply.
+    #   It counts as a queue.
     for c in components:
         if _is_queue(c) and (c.latency or c.capacity <= c.load):
             _error(f'{c.name}: a queue needs a load below its capacity and no fixed latency', c)
     for a in model.analyses:
-        if a.metric == 'availability' and a.percentile:
+        if a.metric != 'latency' and a.percentile:
             _error(f'{a.name}: percentile applies only to latency', a)
         fixed, queues = 0, 0
         for f in a.factors:
             for s in singles(f):
                 r = s.ref
+                if s.store:
+                    if a.metric != 'latency':
+                        _error(f'{a.name}: reads applies only to latency', a)
+                    if s.value or s.unbounded:
+                        _error(f'{a.name}: {r.name} reads {s.store.name} takes no budget', a)
+                    if not _is_queue(r):
+                        _error(f'{a.name}: {r.name} reads {s.store.name}: {r.name} is not a queue', a)
+                    rated = [k for k in reads(model, r, s.store) if k.capacity]
+                    if not rated:
+                        _error(f'{a.name}: {r.name} reads {s.store.name} through no blocking '
+                               f'dependency that declares capacity', a)
+                    if rated[0].capacity <= r.load:
+                        _error(f'{a.name}: {rated[0].name}: the load of {r.name} is not below '
+                               f'the capacity of the read', a)
+                    if not _responses(model, r, s.store):
+                        _error(f'{a.name}: {r.name} reads {s.store.name} with no data flow '
+                               f'{s.store.name} -> {r.name} for the reply', a)
+                    queues += 1
+                    continue
+                if a.metric == 'detection':
+                    if s.value or s.unbounded:
+                        continue
+                    if r.__class__.__name__ == 'Connector':
+                        if not (r.period and r.misses):
+                            _error(f'{a.name}: {r.name} has no period and misses', a)
+                    elif not r.latency:
+                        _error(f'{a.name}: {r.name} has no latency property', a)
+                    continue
                 if a.metric == 'availability':
                     if s.value or s.unbounded:
                         _error(f'{a.name}: a budget (= value) applies only to latency', a)

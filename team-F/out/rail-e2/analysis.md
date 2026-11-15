@@ -50,19 +50,28 @@ Chain availability: **99.86 %** (12.3 h/year); target 99.95: **NOT met**
 
 | Stage | Budget |
 |-------|--------|
-| RSV (queue: mean 1/(40 − 8) = 31.2 ms; p99.3 = 4.96 × mean = 155.1 ms) ‖ TRN (50 ms) ‖ POS (50 ms) | 155.1 ms (maximum, in parallel) |
+| RSV reads CACHE (through F_K38a: 40/s instead of 12/s; queue: mean 1/(40 − 8) = 31.2 ms; p99.3 = 4.96 × mean = 155.1 ms) ‖ TRN (50 ms) ‖ POS (50 ms) | 155.1 ms (maximum, in parallel) |
 | TRAD | 60 ms |
 
 Chain latency p99: **215 ms**; target 800: **met**
 
 ## FQS2SilentConcentrator (Scenario F-QS2)
 
-| Stage | Budget |
-|-------|--------|
-| F_K11 | 1200 ms |
+| Stage | Time to detect |
+|-------|----------------|
+| F_K11 | 3 missed × 400 ms = 1200 ms |
 | ILK | 300 ms |
 
-Chain latency: **1500 ms**; target 2000: **met**
+Detection time: **1500 ms**; target 2000: **met**
+
+## FQS5Takeover (Scenario F-QS5 (toma de control))
+
+| Stage | Time to detect |
+|-------|----------------|
+| F_K36 | 3 missed × 500 ms = 1500 ms |
+| SAMB | 1000 ms (budget) |
+
+Detection time: **2500 ms**; target 5000: **met**
 
 ## SoSQS1M4 (Scenario SoS-QS1 (M4))
 

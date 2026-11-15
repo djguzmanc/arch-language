@@ -62,12 +62,45 @@ CASES = {
         '// Ill-formed (C5): at p99.9 the two fixed stages already use 0.2 % of exceedance, '
         'more than the 0.1 % allowed\n'
         'analysis FQS3CustodyLatency scenario "F-QS3" latency percentile 99.9 target 500 :'),
+    # C5 [F, as C]: a silence threshold without the cadence it counts.
+    'c5-misses.arch': (
+        '  carries "Ocupación de secciones de vía en el formato interno, solo cuando cambia (A11)"\n'
+        '  : CON -> ILK',
+        '  carries "Ocupación de secciones de vía en el formato interno, solo cuando cambia (A11)"\n'
+        '  // Ill-formed (C5): three missed deliveries, but F-K11 has no cadence (A11)\n'
+        '  misses 3\n'
+        '  : CON -> ILK'),
+    # C5 [F, as C]: a detection over a connector that declares no period nor misses.
+    'c5-detection.arch': (
+        '  F_K11 = unbounded, ILK',
+        '  // Ill-formed (C5): F-K11 has no period and misses, so its silence has no detection time\n'
+        '  F_K11, ILK'),
+    # C5 [F]: a read through a blocking dependency that declares no read rate.
+    'c5-read.arch': (
+        '  RSV, TRN, POS, TRAD',
+        '  // Ill-formed (C5): F-K22 does not declare the rate reservas-ms attains reading reservas-db\n'
+        '  RSV reads RSVDB, TRN, POS, TRAD'),
+    # C5 [F]: a read with a rate but no data flow that carries the reply.
+    'c5-read-response.arch': [
+        ('  carries "Lecturas y escrituras de los datos de cada servicio"\n'
+         '  : TRN -> TRNDB, CRG -> CRGDB, POS -> POSDB, RSV -> RSVDB',
+         '  carries "Lecturas y escrituras de los datos de cada servicio"\n'
+         '  capacity 40\n'
+         '  : TRN -> TRNDB, CRG -> CRGDB, POS -> POSDB, RSV -> RSVDB'),
+        ('  RSV, TRN, POS, TRAD',
+         '  // Ill-formed (C5): no data flow reservas-db -> reservas-ms carries the reply of F-K22\n'
+         '  RSV reads RSVDB, TRN, POS, TRAD'),
+    ],
 }
 
 if __name__ == '__main__':
     base = open(os.path.join(HERE, 'models', 'rail-e1.arch'), encoding='utf-8').read()
-    for name, (old, new) in CASES.items():
-        assert base.count(old) == 1, f'{name}: the text to replace is not unique in rail-e1.arch'
+    for name, changes in CASES.items():
+        # A case is one change (old, new) or a list of them.
+        text = base
+        for old, new in changes if isinstance(changes, list) else [changes]:
+            assert base.count(old) == 1, f'{name}: the text to replace is not unique in rail-e1.arch'
+            text = text.replace(old, new)
         with open(os.path.join(HERE, 'invalid', name), 'w', encoding='utf-8') as f:
-            f.write(base.replace(old, new))
+            f.write(text)
         print(f'invalid/{name} written')
