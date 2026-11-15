@@ -1,0 +1,572 @@
+// Model (M1) of the Rail Transportation System, iteration 4 of Delivery 4: redesigned
+// structure. Starting point: rail-e3 (resulting structure of Delivery 2 with the parameters of
+// scenario B). Changes with respect to rail-e3, each marked "Iteration 4" below and declared as
+// a tactic linked to its scenario (C15):
+//   T4.1 (P7 and S1, F-QS5): concentrator B (CONB) and interlocking B (ILKB) in hot standby,
+//        beta 0.10 (as the other replica groups of Delivery 2). Introduces CONB, ILKB, F-K9b,
+//        F-K10b, F-K11b and F-K40; changes F-K11 and F-K12 (links of the B units) and the
+//        analysis FQS5WithTrack ([ILK | ILKB], [CON | CONB]). Convention of the active
+//        component (as convention 10 for the SAM): ILK stands for the active interlocking in
+//        F-K5, F-K6, F-K7, F-K8 and F-K37, so ILKB only receives state (F-K11, F-K11b, F-K40)
+//        and the track devices keep a single commander (C6).
+//   T4.2 (S3; feedback of Delivery 2 on F-K7): heartbeat of the route state: F-K7 and F-K37
+//        declare period 400 misses 3 (assumption R8, by analogy with F-K11); new analysis
+//        FQS2Routes (detection <= 2000 ms).
+//   T4.3 (P3 without margin when every query is retried, F-QS1): reconciliation by truck: one
+//        query by SoS-K18a returns all the units of a truck (F-K28a already asks for the state
+//        of trucks), so 160 jobs instead of 240. Changes ARR (capacity and load) and F-K28a;
+//        the workload of QS_F1 becomes Trucks.
+//   T4.4 (P1 depends on the hit fraction of the cache): NOT modeled. Precalculating the cache
+//        after each reservation or change of path (F-K39) is a change of behaviour only; it is
+//        kept as a declared assumption (hit >= 0.9; P1 keeps its margin down to hit 0.5 in
+//        iteration 2) and the structure does not change for it.
+// The analyses of Delivery 3 other than FQS5WithTrack are unchanged, and FQS2Routes is new.
+// Boundary components and global connectors are written as they appear in sos.arch.
+// Latencies and periods in ms. A modification of behaviour that no property expresses is
+// marked with a comment (Delivery 2, section 7.2).
+system Rail
+
+constituent CPS "Sistema de Gestión de Puertos del Caribe" owner "Operadores portuarios de la costa Caribe"
+constituent PPS "Sistema de Gestión de Puertos del Pacífico" owner "Operadores portuarios de la costa Pacífica"
+constituent RTS "Sistema de Transporte Carretero" owner "Empresas transportadoras y operadores de flotas"
+constituent RLS "Sistema de Transporte Férreo" owner "Concesionarios férreos"
+constituent FTS "Sistema de Transporte Fluvial" owner "Operadores de navegación fluvial"
+constituent NCS "Sistema de Coordinación Nacional" owner "Autoridad nacional (transporte, aduanas y control)"
+
+// Boundary components of the other constituents (as in sos.arch)
+component CGW "Caribbean Port Gateway" in CPS tier T2 kind software latency 300000
+component PGW "Pacific Port Gateway" in PPS tier T2 kind software
+component RGW "Road Gateway" in RTS tier T2 kind software latency 200000
+component FGW "Fluvial Gateway" in FTS tier T2 kind software
+component NCG "National Coordination Gateway" in NCS tier T2 kind software latency 230000
+
+// T1 — Presentation
+component CCF "Consola del CCF" in RLS tier T1 kind software
+component DMI "Interfaz del maquinista (DMI)" in RLS tier T1 kind hardware_software
+component CTF "Consola de terminal férrea" in RLS tier T1 kind software
+
+// T2 — Communication
+// Modified (F-QS1, F-QS7): receives SoS-K34 (F-K29); waits up to 2 s on SoS-K18a; calls the
+// three services of C4 in parallel. No property: it is written as in sos.arch
+component LGW "Rail Gateway" in RLS tier T2 kind software
+// Modified (F-QS6, F-QS1): accepts v1 and v2 of the canonical model
+component TRAD "Traductor canónico" in RLS tier T2 kind software translator latency 60
+// Modified (F-QS3): the critical channel reserves 50 events/s for custody and access readings (11 events/s)
+component BRK "Broker de eventos férreos" in RLS tier T2 kind software capacity 50 load 11
+// Modified (F-QS4): authenticated and encrypted channel (+20 ms on F-K13a/b)
+component RAD "Radio tren–tierra" in RLS tier T2 kind hardware availability 99.90
+component RADB "Radio tren–tierra B" in RLS tier T2 kind hardware availability 99.90
+// Modified (F-QS2): full state every 0.4 s with a timestamp (F-K11)
+component CON "Concentrador de equipos de campo" in RLS tier T2 kind hardware_software availability 99.90
+// Iteration 4 (T4.1): second concentrator in hot standby, same equipment (A8: 99.90 %), fed by
+// the same detectors and readers; both send the full state to both interlockings.
+component CONB "Concentrador de equipos de campo B" in RLS tier T2 kind hardware_software availability 99.90
+
+// T3 — Logic
+// Modified (F-QS1): cut-off rule, dispatches on time with the available composition
+component PLN "Servicio de planificación y despacho" in RLS tier T3 kind software
+// Modified (F-QS4, F-QS5): authenticates, drops duplicates by report id, logs rejected
+// attempts, sends liveness and state to SAM-B
+component SAM "Servicio de autoridad de movimiento (SAM)" in RLS tier T3 kind software availability 99.95 latency 120
+// F-K13a/b, F-K34a/b and F-K18 end or start in the active SAM: the primary or, after the
+// takeover, SAM-B (Delivery 2, section 7.3). SAM stands for the active SAM in those connectors.
+component SAMB "SAM de respaldo (SAM-B)" in RLS tier T3 kind software availability 99.95
+// Modified (F-QS2): keeps the age of the state; after 3 lost digests treats the sections as
+// occupied and reports it through F-K6
+component ILK "Enclavamiento" in RLS tier T3 kind hardware_software availability 99.99 latency 300
+// Iteration 4 (T4.1): interlocking B in hot standby, same equipment (A8: 99.99 %, A9: 0.3 s).
+// It keeps the state of the routes (F-K40) and of the field (F-K11, F-K11b) and takes over
+// when ILK fails; ILK stands for the active interlocking in F-K5, F-K6, F-K7, F-K8 and F-K37.
+// Modified (iteration 4, T4.1 and T4.2): ILK sends its route state to ILKB (F-K40) and the
+// route state to SAM and SAM-B as a heartbeat (F-K7, F-K37).
+component ILKB "Enclavamiento B" in RLS tier T3 kind hardware_software availability 99.99 latency 300
+component TRN "trenes-ms" in RLS tier T3 kind software latency 50
+component CRG "carga-ms" in RLS tier T3 kind software
+component POS "posicion-ms" in RLS tier T3 kind software latency 50
+// Modified (F-QS7): reads the precalculated capacity from the cache through F-K38a, at the
+// 40 requests/s that F-K38a declares (A7). Computing it on each request it still serves 12/s
+component RSV "reservas-ms" in RLS tier T3 kind software capacity 12 load 8
+// Added (F-QS1): its 300 s budget of SoS-QS1 (M4) is written as a budget in the analysis
+// Iteration 4 (T4.3): arribos-ms reconciles one truck at a time: one query by SoS-K18a at
+// q = 2 queries/s (P7) returns the units of the truck, plus 0.1 s of local update per unit
+// (A9) with 240 units / 160 trucks = 1.5 units per truck (A3): as a single server its rate
+// is 1/(1/q + 1.5 x 0.1 s) = 1/(0.5 + 0.15) = 1.538 trucks/s (iteration 3: 1.667 units/s).
+// load: 160 trucks in 4 h (A3) = 160/14400 = 0.011111 trucks/s. Only the simulation (QS_F1)
+// uses them; the 2.5 s timeout of the last query is left out, as in iteration 3.
+component ARR "arribos-ms" in RLS tier T3 kind software capacity 1.538 load 0.011111
+
+// T4 — Data
+component TRNDB "trenes-db" in RLS tier T4 kind software
+component CRGDB "carga-db" in RLS tier T4 kind software
+component POSDB "posicion-db" in RLS tier T4 kind software
+component RSVDB "reservas-db" in RLS tier T4 kind software
+component JRU "Registrador jurídico de a bordo (JRU)" in RLS tier T4 kind hardware_software
+component HIST "Repositorio histórico operacional" in RLS tier T4 kind software
+// Added in iteration 3 (Delivery 2, F-QS1): arribos-db keeps ETA and pending units while
+// arribos-ms cannot reconcile (store, Laboratory 5).
+component ARRDB "arribos-db" in RLS tier T4 kind software store
+component CACHE "Caché de capacidad" in RLS tier T4 kind software
+
+// T5 — Physical
+// Modified (F-QS4, F-QS5): sends each report by both paths, authenticates, compares sensors
+component OBU "Unidad a bordo" in RLS tier T5 kind hardware availability 99.99 latency 80
+component SEN "Sensores de la locomotora" in RLS tier T5 kind physical availability 99.95
+component SENB "Sensores de la locomotora B" in RLS tier T5 kind physical availability 99.95
+component BA "Actuador de freno" in RLS tier T5 kind physical
+component APV "Aparatos de vía (agujas y señales)" in RLS tier T5 kind physical
+component DET "Detectores de vía" in RLS tier T5 kind physical
+component LID "Lector de identificación de vagones" in RLS tier T5 kind hardware
+
+// Internal connectors
+connector F_K1 nature dependency coupling blocking
+  carries "Órdenes de planificación y despacho, y consultas de estado"
+  : CCF -> PLN
+connector F_K2 nature dependency coupling blocking
+  carries "Registro de cargue, descargue y composición, y consultas de reservas"
+  : CTF -> CRG, CTF -> TRN, CTF -> RSV
+connector F_K3 nature dependency coupling blocking
+  carries "Reserva de capacidad de corredor y terminal para el surco planificado"
+  : PLN -> RSV
+connector F_K4 nature dependency coupling blocking
+  carries "Composición y disponibilidad de locomotoras y vagones"
+  : PLN -> TRN
+connector F_K5 nature control_command coupling blocking
+  carries "Solicitudes de ruta para el tren que se despacha"
+  : PLN -> ILK
+connector F_K6 nature event_notification coupling supply
+  carries "Resultado de las solicitudes de ruta, ocupación y alarma de secciones en falla segura"
+  : ILK -> PLN
+// Iteration 4 (T4.2): heartbeat with the full route state every 0.4 s (R8).
+connector F_K7 nature event_notification coupling supply
+  carries "Estado de rutas, agujas y señales cuando cambian, y completo cada 0,4 s (latido)"
+  period 400 misses 3
+  : ILK -> SAM
+connector F_K8 nature control_command coupling sink
+  carries "Órdenes de posición de agujas y de aspecto de señales"
+  : ILK -> APV
+connector F_K9 nature data_flow coupling supply
+  carries "Paso de trenes y ocupación de secciones, en el formato de cada fabricante"
+  : DET -> CON
+connector F_K10 nature data_flow coupling supply
+  carries "Identificación de vagones y contenedores al entrar y salir de la terminal"
+  : LID -> CON
+connector F_K11 nature data_flow coupling supply
+  carries "Resumen del estado cada 0,4 s con marca de tiempo, además de los cambios"
+  period 400 misses 3
+  // Iteration 4 (T4.1): also to the interlocking B.
+  : CON -> ILK, CON -> ILKB
+// Iteration 4 (T4.1): the concentrator B, by the same cadence, to both interlockings.
+connector F_K11b nature data_flow coupling supply
+  carries "Resumen del estado cada 0,4 s con marca de tiempo, además de los cambios (concentrador B)"
+  period 400 misses 3
+  : CONB -> ILK, CONB -> ILKB
+// Iteration 4 (T4.1): the concentrator B also publishes train passages and access readings.
+connector F_K12 nature event_notification coupling sink
+  carries "Paso de trenes; las lecturas de acceso van al canal crítico"
+  : CON -> BRK, CONB -> BRK
+// Iteration 4 (T4.1): the detectors and the readers feed both concentrators.
+connector F_K9b nature data_flow coupling supply
+  carries "Paso de trenes y ocupación de secciones, en el formato de cada fabricante (concentrador B)"
+  : DET -> CONB
+connector F_K10b nature data_flow coupling supply
+  carries "Identificación de vagones y contenedores al entrar y salir de la terminal (concentrador B)"
+  : LID -> CONB
+// Iteration 4 (T4.1): the active interlocking keeps the standby one up to date (routes set,
+// locks and its own liveness) every 0.4 s (R8), so ILKB detects its silence after 3 periods.
+connector F_K40 nature data_flow coupling supply
+  carries "Rutas establecidas, bloqueos y latido del enclavamiento activo cada 0,4 s"
+  period 400 misses 3
+  : ILK -> ILKB
+connector F_K13a nature data_flow coupling supply
+  carries "Reportes de posición del tren, autenticados y cifrados"
+  latency 250 period 5000
+  : OBU -> RAD -> SAM
+connector F_K13b nature control_command coupling supply
+  carries "Autoridades de movimiento, autenticadas y cifradas"
+  latency 250 period 5000
+  : SAM -> RAD -> OBU
+connector F_K14 nature data_flow coupling supply
+  carries "Velocidad, distancia recorrida y condiciones físicas del tren"
+  : SEN -> OBU
+connector F_K15 nature control_command coupling sink
+  carries "Órdenes de frenado"
+  : OBU -> BA
+connector F_K16 nature data_flow coupling supply
+  carries "Velocidad permitida, límite de la autoridad e instrucciones a mostrar"
+  : OBU -> DMI
+connector F_K17 nature data_flow coupling sink
+  carries "Datos de a bordo a registrar"
+  : OBU -> JRU
+connector F_K18 nature event_notification coupling sink
+  carries "Posición de los trenes y autoridades otorgadas"
+  : SAM -> BRK
+connector F_K19 nature event_notification coupling sink
+  carries "Custodia y composición despachada, por el canal crítico"
+  latency 25
+  : PLN -> BRK, CRG -> BRK
+connector F_K20 nature event_notification coupling supply
+  carries "Posiciones, llegadas y salidas"
+  : BRK -> POS
+connector F_K26 nature event_notification coupling supply
+  carries "Cargue, descargue y transferencias de custodia (CR1)"
+  : BRK -> CRG
+connector F_K27 nature event_notification coupling sink
+  carries "Eventos operacionales para el histórico (CR1)"
+  : BRK -> HIST
+connector F_K21 nature event_notification coupling sink
+  carries "Custodia y composición (canal crítico), posición y eventos de vía, en el modelo canónico"
+  : BRK -> TRAD -> LGW
+connector F_K22 nature dependency coupling blocking
+  carries "Lecturas y escrituras de los datos de cada servicio"
+  : TRN -> TRNDB, CRG -> CRGDB, POS -> POSDB, RSV -> RSVDB
+connector F_K23a nature dependency coupling blocking
+  carries "Solicitudes de capacidad, en paralelo, timeout de 300 ms y un reintento"
+  : LGW -> TRAD -> RSV, LGW -> TRAD -> TRN, LGW -> TRAD -> POS
+connector F_K23b nature data_flow coupling blocking
+  carries "Capacidad, plataforma, ventana y arribo previsto; rechazo explícito si vence el reintento"
+  : RSV -> TRAD -> LGW, TRN -> TRAD -> LGW, POS -> TRAD -> LGW
+connector F_K24a nature dependency coupling blocking
+  carries "Avisos de convoy de exportación y solicitudes de camiones (SoS-K22a, SoS-K23a, SoS-K25a)"
+  : PLN -> TRAD -> LGW
+connector F_K24b nature data_flow coupling blocking
+  carries "Zona, ventana de descargue y citas de retiro (SoS-K22b, SoS-K23b, SoS-K25b)"
+  : LGW -> TRAD -> PLN
+connector F_K25a nature dependency coupling blocking
+  carries "Consulta de estado consolidado de la carga (sale por SoS-K18a)"
+  : CRG -> TRAD -> LGW
+connector F_K25b nature data_flow coupling supply
+  carries "Estado consolidado de la carga consultada (llega por SoS-K18b)"
+  : LGW -> TRAD -> CRG
+
+connector F_K28a nature dependency coupling blocking
+  // Iteration 4 (T4.3): one query per truck returns all its units.
+  carries "Consulta del estado de camiones con destino férreo, una por camión con todas sus unidades (sale por SoS-K18a), máximo 2/s"
+  : ARR -> TRAD -> LGW
+connector F_K28b nature data_flow coupling supply
+  carries "Posición y ETA con fuente e incertidumbre (llega por SoS-K18b)"
+  // Added in iteration 3 (Delivery 2, F-QS1): arribos-ms polls the state every P = 60 s and
+  // treats the data as old after 3 periods without update (detection 3P = 180 s <= 240 s).
+  period 60000 misses 3
+  : LGW -> TRAD -> ARR
+connector F_K29 nature event_notification coupling supply
+  carries "Estado de servicio de un constituyente (llega por SoS-K34)"
+  : LGW -> TRAD -> ARR
+connector F_K30 nature data_flow coupling supply
+  carries "ETA e incertidumbre por ventana de transferencia"
+  : ARR -> RSV
+connector F_K31 nature event_notification coupling supply
+  carries "Modo degradado activo o inactivo; unidades que no llegaron al cierre"
+  : ARR -> PLN
+connector F_K32 nature event_notification coupling supply
+  carries "Lecturas de acceso que confirman la llegada física"
+  : BRK -> ARR
+connector F_K33 nature dependency coupling blocking
+  carries "Lecturas y escrituras de ETA, unidades pendientes y modo degradado"
+  : ARR -> ARRDB
+connector F_K34a nature data_flow coupling supply
+  carries "Reportes de posición por el camino B"
+  latency 250 period 5000
+  : OBU -> RADB -> SAM
+connector F_K34b nature control_command coupling supply
+  carries "Autoridades de movimiento por el camino B"
+  latency 250 period 5000
+  : SAM -> RADB -> OBU
+connector F_K35 nature data_flow coupling supply
+  carries "Velocidad y distancia, segunda medición"
+  : SENB -> OBU
+connector F_K36 nature data_flow coupling supply
+  carries "Latido cada 0,5 s y último estado de autoridad de cada tren"
+  period 500 misses 3
+  : SAM -> SAMB
+// Iteration 4 (T4.2): the same heartbeat towards SAM-B (R8).
+connector F_K37 nature event_notification coupling supply
+  carries "Estado de rutas hacia el respaldo, completo cada 0,4 s (latido)"
+  period 400 misses 3
+  : ILK -> SAMB
+connector F_K38a nature dependency coupling blocking
+  carries "Consulta de capacidad calculada"
+  capacity 40
+  : RSV -> CACHE
+connector F_K38b nature data_flow coupling blocking
+  carries "Capacidad calculada (respuesta de F-K38a)"
+  : CACHE -> RSV
+connector F_K39 nature data_flow coupling supply
+  carries "Actualización tras cada reserva o cambio de surco"
+  : RSV -> CACHE
+
+// Global connectors of the Rail Gateway (as in sos.arch)
+connector SoS_K3a nature dependency coupling blocking
+  carries "Solicitud de capacidad y turno de transferencia camión-tren"
+  agreement "Contrato de transferencia camión-tren (v1)"
+  : RGW -> LGW
+connector SoS_K3b nature data_flow coupling blocking
+  carries "Confirmación de programación y plataforma, o rechazo"
+  agreement "Contrato de transferencia camión-tren (v1)"
+  : LGW -> RGW
+connector SoS_K7a nature dependency coupling blocking
+  carries "Unidades listas para transferencia patio-tren y solicitud de vagones"
+  agreement "Contrato de transferencia puerto-tren (v1)"
+  : PGW -> LGW
+connector SoS_K7b nature data_flow coupling blocking
+  carries "Confirmación de convoy, capacidad, plataforma y ventana, o rechazo"
+  agreement "Contrato de transferencia puerto-tren (v1)"
+  : LGW -> PGW
+connector SoS_K13 nature event_notification coupling sink
+  carries "Custodia recibida por el concesionario y composición del tren"
+  agreement "Semántica de custodia; clave transferId (P8)"
+  : LGW -> NCG
+connector SoS_K14 nature event_notification coupling supply
+  carries "Posición del convoy, estado del corredor y eventos de vía"
+  agreement "Reporte de posición; umbral P6 y clave P8"
+  : LGW -> NCG
+connector SoS_K18a nature dependency coupling blocking
+  carries "Consulta de estado consolidado de la carga en la que participa el concesionario"
+  agreement "Contrato de estado consolidado; regla de acceso y tasa P7"
+  : LGW -> NCG
+connector SoS_K18b nature data_flow coupling blocking
+  carries "Estado consolidado limitado a su carga; v3: posición y ETA estimadas"
+  agreement "Contrato de estado consolidado; regla de acceso y tasa P7"
+  : NCG -> LGW
+connector SoS_K22a nature dependency coupling blocking
+  carries "Aviso de convoy de exportación y solicitud de zona y ventana de descargue"
+  agreement "Contrato de transferencia puerto-tren (v1)"
+  : LGW -> PGW
+connector SoS_K22b nature data_flow coupling blocking
+  carries "Zona de patio, punto y ventana de descargue, o rechazo"
+  agreement "Contrato de transferencia puerto-tren (v1)"
+  : PGW -> LGW
+connector SoS_K23a nature dependency coupling blocking
+  carries "Solicitud de camiones para retirar unidades en terminal férrea"
+  agreement "Contrato de retiro por camión (v1)"
+  : LGW -> RGW
+connector SoS_K23b nature data_flow coupling blocking
+  carries "Vehículos asignados y cita de retiro, o rechazo"
+  agreement "Contrato de retiro por camión (v1)"
+  : RGW -> LGW
+connector SoS_K24a nature dependency coupling blocking
+  carries "Unidades listas para transferencia patio-tren y solicitud de vagones"
+  agreement "Contrato de transferencia puerto-tren (v1)"
+  : CGW -> LGW
+connector SoS_K24b nature data_flow coupling blocking
+  carries "Confirmación de convoy, capacidad, plataforma y ventana, o rechazo"
+  agreement "Contrato de transferencia puerto-tren (v1)"
+  : LGW -> CGW
+connector SoS_K25a nature dependency coupling blocking
+  carries "Aviso de convoy de exportación y solicitud de zona y ventana de descargue"
+  agreement "Contrato de transferencia puerto-tren (v1)"
+  : LGW -> CGW
+connector SoS_K25b nature data_flow coupling blocking
+  carries "Zona de patio, punto y ventana de descargue, o rechazo"
+  agreement "Contrato de transferencia puerto-tren (v1)"
+  : CGW -> LGW
+
+connector SoS_K34 nature event_notification coupling sink
+  carries "Estado de servicio de un constituyente: degradado o restablecido"
+  agreement "Aviso de estado de servicio (P2)"
+  : NCG -> LGW
+// Not a connector of the Rail Gateway: written as in sos.arch for the analysis of SoS-QS1.
+connector SoS_K5 nature event_notification coupling sink
+  carries "Custodia recibida por el transportador; v3: ETA al despachar"
+  agreement "Semántica de custodia; clave transferId (P8)"
+  latency 40000
+  : RGW -> NCG
+
+// Analyses (Delivery 2, sections 3.6.6, 5 and 8.1)
+// F-QS3: custody event from carga-ms to the Rail Gateway during the burst (one queue).
+analysis FQS3CustodyLatency scenario "F-QS3" latency percentile 99 target 500 :
+  F_K19, BRK, TRAD
+// F-QS4: authorization cycle (on-board unit counted at both ends, as in Laboratory 4).
+analysis FQS4AuthorizationCycle scenario "F-QS4" latency percentile 99 target 1000 :
+  OBU, F_K13a, SAM, F_K13b, OBU
+// F-QS5: availability of the authorization chain C1 (sensors, on-board unit, radio, SAM).
+analysis FQS5AuthorizationAvailability scenario "F-QS5" availability target 99.95 :
+  [SEN | SENB] beta 0.10, OBU, [RAD | RADB] beta 0.10, [SAM | SAMB] beta 0.10
+// F-QS5 with the track. Iteration 4 (T4.1): the interlocking and the concentrator are now
+// duplicated in hot standby with beta 0.10, like the other groups of the chain.
+analysis FQS5WithTrack scenario "F-QS5 (con vía)" availability target 99.95 :
+  [SEN | SENB] beta 0.10, OBU, [RAD | RADB] beta 0.10, [SAM | SAMB] beta 0.10,
+  [ILK | ILKB] beta 0.10, [CON | CONB] beta 0.10
+// F-QS7: the gateway calls the three services of C4 in parallel; reservas-ms reads the cache
+// through F-K38a (reply by F-K38b), so its queue serves at the 40 requests/s of the read (A7).
+analysis FQS7CapacityRequest scenario "F-QS7" latency percentile 99 target 800 :
+  [RSV reads CACHE | TRN | POS], TRAD
+// F-QS2: three lost digests of F-K11 (misses x period) plus detection in the interlocking.
+analysis FQS2SilentConcentrator scenario "F-QS2" detection target 2000 :
+  F_K11, ILK
+// F-QS5 (takeover): SAM-B takes control after three missed heartbeats of F-K36 (3 x 0.5 s)
+// plus 1 s of switchover, written as a budget of SAM-B (A9).
+analysis FQS5Takeover scenario "F-QS5 (toma de control)" detection target 5000 :
+  F_K36, SAMB = 1000
+// SoS-QS1 (M4) from the Rail side: SoS-K34 carries the "restablecido" notice to the Rail Gateway
+// and arribos-ms reconciles in parallel with the other consumers (CGW stands for them, as in
+// sos.arch). Budgets of section 3.6.2 (P1) written with = so that SoS-K34 stays as in sos.arch.
+analysis SoSQS1M4 scenario "SoS-QS1 (M4)" latency target 900000 :
+  RGW, SoS_K5, NCG, SoS_K34 = 10000, [CGW | ARR = 300000]
+// Added in iteration 3 (P5): F-QS1, arribos-ms detects that SoS-K18b stopped updating after
+// three periods of F-K28b without new data (Delivery 2: 3P = 180 s, measure <= 240 s).
+analysis FQS1StaleData scenario "F-QS1 (detección)" detection target 240000 :
+  F_K28b
+// Iteration 4 (T4.2): F-QS2 for the route state: the SAM detects that the interlocking went
+// silent after three missed heartbeats of F-K7 (3 x 0.4 s) plus its processing (A9: 120 ms).
+analysis FQS2Routes scenario "F-QS2 (estado de rutas)" detection target 2000 :
+  F_K7, SAM
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Delivery 4, iteration 4: every scenario of iterations 1 to 3, verified again on the
+// redesigned structure; artifacts extended with the elements of T4.1 to T4.3. Tactics of
+// Delivery 2 as in rail-e2, plus the tactics of the redesign. Six parts as in Delivery 2 (sections 3 and 5,
+// assumptions of section 4.3); the response measure is simulated (workload, measure, run),
+// verified by an analysis of Delivery 3 (verified_by), or declared not verifiable with what
+// is missing (C14). A measure that the language cannot verify is written as its own scenario.
+// Times of `run` in s; rates in jobs/s.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+// Scenario A again (P1). The gateway calls the three services of C4 in parallel (fork: the
+// request goes on when the slowest branch ends) and reservas-ms reads the precalculated
+// capacity from the cache through F-K38a: a hit is served at the 40/s of F-K38a, a miss at
+// the 12/s of reservas-ms (A7). Without `hit`, F-K38a serves every read (hit 1, assumption of
+// Delivery 3); `vary hit` is the sensitivity to that uncertain parameter (feedback (a) of
+// Delivery 3). Known result with hit 1: ln(100)/(40 − 8) + 60 = 203.9 ms (the branch of
+// reservas-ms exceeds the 50 ms of TRN and POS at the p99).
+scenario QS_F7 "F-QS7" attribute "rendimiento"
+  source "Puertos (CPS, PPS) y Carretera (RTS), a través de sus gateways"
+  stimulus "Ráfaga de 8 solicitudes de capacidad, turno y vagones por segundo durante 30 min (A5)"
+  artifact LGW, TRAD, RSV, TRN, POS, CACHE, F_K23a, F_K23b, F_K38a, F_K38b
+  environment "Temporada alta, operación normal del corredor"
+  response "Cada solicitud recibe capacidad, plataforma, ventana y arribo previsto, o un rechazo explícito"
+  verified_by FQS7CapacityRequest
+  // T4.4 (not modeled): hit >= 0.9 is a declared assumption; vary hit keeps the sensitivity.
+  workload Requests rate 8 : LGW -> TRAD -> [RSV reads CACHE | TRN | POS] -> TRAD -> LGW
+  vary hit F_K38a : 1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.2, 0
+  measure p99_latency Requests <= 800 ms
+  run 1800 warmup 60 replications 10
+scenario QS_F7R "F-QS7 (0 sin respuesta; tope de 660 ms)" attribute "rendimiento"
+  not_verifiable "Timeouts y reintentos en el workload (300 ms y un reintento, Entrega 2 §8.2); parcial: fracción con latencia > 300 ms"
+
+// Collateral property (P2). The broker model is the critical channel: 50 events/s reserved for
+// custody (1/s) and access readings (10/s), 11 events/s (A6). The low-criticality burst goes to
+// the other channel, which the model does not represent. Known result (stationary):
+// ln(100)/(50 − 11) + 25 + 60 = 203.1 ms.
+scenario QS_F3 "F-QS3" attribute "rendimiento"
+  source "Concentrador de equipos de campo y servicios que publican telemetría de baja criticidad"
+  stimulus "Ráfaga de eventos de baja criticidad que lleva el broker a 245 eventos/s durante 15 min"
+  artifact CRG, F_K19, BRK, F_K21, TRAD, LGW
+  environment "Operación normal (20 eventos/s, A6) y ráfaga de telemetría"
+  response "Los eventos de custodia de carga-ms llegan al Rail Gateway a tiempo; la telemetría espera"
+  verified_by FQS3CustodyLatency
+  workload Custody rate 1 : CRG -> BRK -> TRAD -> LGW
+  workload Access rate 10 : CON -> BRK
+  measure p99_latency Custody <= 500 ms
+  run 900 warmup 100 replications 10
+scenario QS_F3T "F-QS3 (cola de telemetría)" attribute "rendimiento"
+  not_verifiable "Tasas que cambian en el tiempo (ráfaga de 15 min y luego carga normal) y canales con prioridad en el broker: 30.600 eventos, ~160 s de drenaje"
+
+// Scenario B (P3, P4, with P5 by analysis). Iteration 4 (T4.3): one job per truck. Carretera is down 4 h (14 400 s):
+// SoS-K18b stops updating and arribos-ms cannot reconcile, which the model writes as a fault
+// of ARR (C13: ARR has capacity), so the units wait in arribos-db (store) instead of being
+// lost. Trucks: 160 in 4 h (A3), one job per truck, from arribos-db through arribos-ms and the
+// translator to the Rail Gateway, where the query leaves by SoS-K18a (F-K33, F-K28a).
+// drain [F]: from the end of the outage until the last held truck is reconciled; lost counts
+// trucks (0 trucks lost means 0 units lost).
+// Sensitivity (D7): the same effective query rates as iteration 3, q_ef = 2 (agreed), 1.43,
+// 1.11, 1 (one retry per query) and 0.93/s, written as the rate of ARR, 1/(1/q_ef + 0.15 s).
+// Known result (Laboratory 5, section 4.6): backlog/(μ − λ) = 160/(1.538 − 0.0111) = 104.8 s.
+scenario QS_F1 "F-QS1" attribute "resiliencia"
+  source "Sistema de Transporte Carretero (RTS), a través de Coordinación Nacional (NCS)"
+  stimulus "Carretera cae 4 h: SoS-K18b deja de actualizar posición y ETA de los camiones con destino férreo"
+  artifact ARR, ARRDB, F_K28a, F_K28b, F_K29, F_K33, TRAD, LGW, SoS_K18a, SoS_K18b, SoS_K34
+  environment "Operación normal: 40 camiones/h hacia terminales férreas, 60 en tránsito (A3, A4)"
+  response "arribos-ms detecta el dato viejo, entra en modo degradado, guarda ETA y unidades pendientes en arribos-db y, al volver Carretera, reconcilia a ≤ 2 consultas/s"
+  verified_by SoSQS1M4, FQS1StaleData
+  workload Trucks rate 0.011111 : ARRDB -> ARR -> TRAD -> LGW
+  fault ARR down at 0 for 14400
+  vary ARR : 1.538, 1.176, 0.952, 0.870, 0.816
+  measure drain Trucks <= 300 s
+  measure lost Trucks <= 0 events
+  run 16000 warmup 0 replications 20
+scenario QS_F1C "F-QS1 (0 trenes cancelados)" attribute "resiliencia"
+  not_verifiable "Reglas de comportamiento (regla de corte del despacho) y model checking sobre la máquina de estados del despacho"
+
+scenario QS_F2 "F-QS2" attribute "tolerancia a fallas"
+  source "Concentrador de equipos de campo (falla interna)"
+  stimulus "El concentrador deja de enviar el estado de las secciones de vía, sin avisar"
+  artifact CON, CONB, F_K11, F_K11b, ILK, F_K6, PLN, F_K7, SAM, F_K37, SAMB
+  environment "Operación normal, con trenes circulando y rutas establecidas"
+  response "El enclavamiento detecta el silencio, trata las secciones como ocupadas (falla segura) y lo reporta; el SAM detecta el silencio del enclavamiento"
+  verified_by FQS2SilentConcentrator, FQS2Routes
+scenario QS_F2R "F-QS2 (0 rutas sobre estado viejo)" attribute "tolerancia a fallas"
+  not_verifiable "Máquina de estados del enclavamiento y model checking"
+
+scenario QS_F4 "F-QS4" attribute "seguridad"
+  source "Atacante con acceso al canal de radio tren-tierra"
+  stimulus "Inyecta o repite reportes de posición y autoridades de movimiento falsos"
+  artifact OBU, F_K13a, RAD, SAM, F_K13b
+  environment "Operación normal en el corredor, 40 trenes (A1)"
+  response "El SAM y la unidad a bordo rechazan los mensajes no auténticos o repetidos, registran el intento y el ciclo de autorización sigue a tiempo"
+  verified_by FQS4AuthorizationCycle
+scenario QS_F4A "F-QS4 (0 falsos aceptados)" attribute "seguridad"
+  not_verifiable "Identidad, credenciales y límites de confianza por conector; model checking del protocolo de autenticación"
+
+// The artifact is the ground and on-board authorization chain with the track (R5: S1 includes
+// the on-board unit).
+scenario QS_F5 "F-QS5" attribute "disponibilidad"
+  source "Falla de hardware o software en la cadena de autorización"
+  stimulus "Falla un elemento de la cadena: sensores, unidad a bordo, radio, SAM, enclavamiento o concentrador"
+  artifact SEN, SENB, OBU, RAD, RADB, SAM, SAMB, ILK, ILKB, CON, CONB
+  environment "Operación normal, 40 trenes en circulación (A1, A8)"
+  response "La cadena sigue otorgando autoridades de movimiento; SAM-B toma el control si el SAM calla"
+  verified_by FQS5AuthorizationAvailability, FQS5WithTrack, FQS5Takeover
+
+scenario QS_F6 "F-QS6" attribute "evolucionabilidad"
+  source "Coordinación Nacional, dueña del modelo canónico"
+  stimulus "Publica la versión 2 del modelo canónico"
+  artifact TRAD, LGW
+  environment "Operación normal, con convivencia de las versiones 1 y 2"
+  response "Solo cambia el traductor; los servicios internos no se tocan"
+  not_verifiable "Versiones de interfaz por conector y comparación de dos modelos (change impact); C7 da evidencia parcial: todo pasa por TRAD"
+
+scenario QS_SoS1 "SoS-QS1 (M4)" attribute "resiliencia"
+  source "Sistema de Transporte Carretero (RTS)"
+  stimulus "Carretera vuelve tras 4 h de caída y reenvía lo que retuvo"
+  artifact RGW, SoS_K5, NCG, SoS_K34, CGW, ARR
+  environment "Recuperación tras la caída de Carretera, con la carga normal en curso"
+  response "Coordinación Nacional consolida, avisa a los consumidores y cada uno reconcilia en paralelo"
+  verified_by SoSQS1M4
+scenario QS_SoS1M1 "SoS-QS1 (M1)" attribute "resiliencia"
+  not_verifiable "Reglas de comportamiento (P5); model checking sobre la máquina de estados del despacho"
+scenario QS_SoS1M2 "SoS-QS1 (M2)" attribute "resiliencia"
+  not_verifiable "Distribución del error de estimación de la ETA y su simulación"
+
+// Tactics of Delivery 2 (section 7), each linked to the scenario that motivates it and to the
+// elements it introduces or changes (C15). The tactic of F-QS6 (translator that accepts v1 and
+// v2 of the canonical model, changes TRAD) is not declared: F-QS6 is not verifiable, and C15
+// asks for a verified scenario.
+tactic T_Cache "Caché de capacidad precalculada" for QS_F7
+  introduces CACHE, F_K38a, F_K38b, F_K39 changes RSV
+tactic T_Parallel "Llamadas en paralelo a los servicios de C4, timeout de 300 ms y un reintento" for QS_F7
+  changes LGW, F_K23a, F_K23b
+tactic T_CriticalChannel "Canal crítico reservado en el broker (50 eventos/s)" for QS_F3
+  changes BRK, F_K12, F_K19, F_K21
+tactic T_Degraded "Modo degradado con reconciliación y límite de consultas (2/s)" for QS_F1, QS_SoS1
+  introduces ARR, ARRDB, F_K28a, F_K28b, F_K29, F_K30, F_K31, F_K32, F_K33, SoS_K34 changes LGW, TRAD, PLN
+tactic T_Heartbeat "Resumen periódico con marca de tiempo del concentrador (0,4 s)" for QS_F2
+  changes CON, F_K11, ILK, F_K6
+tactic T_Authentication "Autenticación y cifrado del canal tren-tierra; descarte de duplicados" for QS_F4
+  changes OBU, SAM, RAD, F_K13a, F_K13b
+tactic T_RadioB "Segundo camino de radio" for QS_F5
+  introduces RADB, F_K34a, F_K34b changes OBU
+tactic T_SensorsB "Segunda medición de sensores" for QS_F5
+  introduces SENB, F_K35 changes OBU
+tactic T_SAMB "SAM de respaldo en espera caliente con latido" for QS_F5
+  introduces SAMB, F_K36, F_K37 changes SAM
+// tactic T_Canonical "Traductor que acepta v1 y v2 del modelo canónico" for QS_F6 changes TRAD
+
+// Tactics of the redesign (Delivery 4, iteration 4).
+tactic T4_1_TrackStandby "Concentrador B y enclavamiento B en espera caliente (beta 0,10)" for QS_F5
+  introduces CONB, ILKB, F_K9b, F_K10b, F_K11b, F_K40 changes ILK, F_K11, F_K12
+tactic T4_2_RouteHeartbeat "Latido del estado de rutas hacia SAM y SAM-B (400 ms x 3)" for QS_F2, QS_F5
+  changes ILK, F_K7, F_K37
+tactic T4_3_TruckReconciliation "Reconciliación por camión (una consulta por camión)" for QS_F1, QS_SoS1
+  changes ARR, F_K28a
+// T4.4 "Precálculo de la caché tras cada cambio de surco" (for QS_F7, changes F_K39 by behaviour
+// only) is not declared: it changes no element of the model; hit >= 0.9 is a declared assumption.
