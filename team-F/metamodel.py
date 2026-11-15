@@ -1,5 +1,31 @@
+"""Metamodel of the language of team F (Rail): grammar arch.tx and constraints C1-C7, C12-C15.
+
+Numbering of the constraints and its equivalence with the common language of Delivery 4
+(common/metamodel.py, team D). C12-C16 keep the numbers of the common language so that the
+teams converge; our C6 and C7 keep theirs, which in the common language name other rules.
+
+| Ours | Common | Content | Origin |
+|------|--------|---------|--------|
+| C1-C4 | C1-C4 | Laboratory 4: links, single commander per command, agreement on boundary connectors, single user of a T4 store | Lab 4 |
+| C5 | C5 | Properties that each analysis needs [F, extended]; in Delivery 4 also: `hit` in (0, 1] and only on a connector with capacity (and `vary hit` on such a connector, values in [0, 1]); in a workload, `Q reads S` only on a queue with its read dependency; a queue at most once per path; `drain` needs a store in the path of its workload and a fault | F |
+| C6 | (C6 = layers, team D) | Hierarchical style of Rail: one commander per component, never up the tiers, no cycles | F (kept) |
+| C7 | (C7 = no command crosses, team D; C8 [A] similar to ours) | Constituent gateway with anti-corruption layer | F (kept) |
+| - | C9-C11 | Rules of teams A and C, scoped to CPS/RTS | not applicable |
+| C12 | C12 (= Lab 5 C6) | Every hop of a workload follows a connector (either direction); with a fork, every pair (previous step, branch) and (branch, next step) | L5, adapted to forks [F] |
+| C13 | C13 (= Lab 5 C7) | A fault only on a component with capacity | L5 |
+| C14 | C14 | Six parts of a quality scenario; its measure is simulated (workloads, measures and run), verified_by an analysis, or not_verifiable | D4 (run is tested by replications: auto_init_attributes) |
+| C15 | C15 | A tactic introduces or changes elements and its scenario is verified | D4 |
+| C16 | C16 | Correspondence with sos.arch (K1-K3): correspondence.py --as RLS | D4 |
+
+This metamodel keeps auto_init_attributes=True (textX default), so an optional number that is
+not written takes 0, an optional string '' and an optional reference None; the checks test
+truth values (e.g. `replications`, not `duration is None`). For that reason `hit` has the flag
+`hit_set`: a connector with capacity and no `hit` written gets hit = 1 (assumption of E3).
+"""
 import os
 from textx import metamodel_from_file, get_location, TextXSemanticError
+
+SIX_PARTS = ('source', 'stimulus', 'artifact', 'environment', 'response')
 
 FIXED_EXCEEDANCE = 0.1   # % of cases in which a fixed stage exceeds its budget (A9: p99.9)
 
@@ -39,6 +65,25 @@ def _responses(model, source, store):
     return [k for k in model.elements if k.__class__.__name__ == 'Connector'
             and 'data_flow' in k.natures
             and any(link.path[0] is store and link.path[-1] is source for link in k.links)]
+
+
+def _check_read(model, where, queue, store, obj):
+    """[F] C5. `Q reads S` (in an analysis or a workload): Q is a queue, a single blocking
+    dependency Q -> S declares the read rate (capacity), and a data flow S -> Q carries the reply.
+    Returns the dependency."""
+    if not _is_queue(queue):
+        _error(f'{where}: {queue.name} reads {store.name}: {queue.name} is not a queue', obj)
+    rated = [k for k in reads(model, queue, store) if k.capacity]
+    if not rated:
+        _error(f'{where}: {queue.name} reads {store.name} through no blocking '
+               f'dependency that declares capacity', obj)
+    if len(rated) > 1:
+        _error(f'{where}: {queue.name} reads {store.name}: several dependencies '
+               f'with capacity {sorted(k.name for k in rated)}', obj)
+    if not _responses(model, queue, store):
+        _error(f'{where}: {queue.name} reads {store.name} with no data flow '
+               f'{store.name} -> {queue.name} for the reply', obj)
+    return rated[0]
 
 
 def _cycle(graph):
@@ -101,6 +146,12 @@ def check_model(model):
             if k.capacity <= source.load:
                 _error(f'{k.name}: capacity {k.capacity:g} is not above the load {source.load:g} '
                        f'of its source {source.name}', k)
+        # C5 [F, Delivery 4]. hit is the fraction of the reads served at the capacity of the
+        # dependency (cache hits): a fraction in (0, 1], only where there is such a capacity.
+        if k.hit_set and not k.capacity:
+            _error(f'{k.name}: hit applies only to a connector with capacity', k)
+        if k.hit_set and not 0 < k.hit <= 1:
+            _error(f'{k.name}: hit {k.hit:g} is not in (0, 1]', k)
 
     # C4. A data store (T4) is accessed by dependency from a single component.
     for c in components:
@@ -197,18 +248,7 @@ def check_model(model):
                         _error(f'{a.name}: reads applies only to latency', a)
                     if s.value or s.unbounded:
                         _error(f'{a.name}: {r.name} reads {s.store.name} takes no budget', a)
-                    if not _is_queue(r):
-                        _error(f'{a.name}: {r.name} reads {s.store.name}: {r.name} is not a queue', a)
-                    rated = [k for k in reads(model, r, s.store) if k.capacity]
-                    if not rated:
-                        _error(f'{a.name}: {r.name} reads {s.store.name} through no blocking '
-                               f'dependency that declares capacity', a)
-                    if len(rated) > 1:
-                        _error(f'{a.name}: {r.name} reads {s.store.name}: several dependencies '
-                               f'with capacity {sorted(k.name for k in rated)}', a)
-                    if not _responses(model, r, s.store):
-                        _error(f'{a.name}: {r.name} reads {s.store.name} with no data flow '
-                               f'{s.store.name} -> {r.name} for the reply', a)
+                    _check_read(model, a.name, r, s.store, a)
                     queues += 1
                     continue
                 if a.metric == 'detection':
@@ -244,6 +284,113 @@ def check_model(model):
             if room < 0 or (queues and room <= 0):
                 _error(f'{a.name}: {fixed} fixed stages leave no exceedance for '
                        f'p{a.percentile:g}', a)
+
+    check_scenarios(model, connectors)
+
+    # [F] Not written, the hit fraction of a read dependency is 1 (assumption of Delivery 3).
+    for k in connectors:
+        if k.capacity and not k.hit_set:
+            k.hit = 1.0
+
+
+def _ends(step):
+    """[F] The hops of a step of a workload: the branches of a fork, or the hop itself."""
+    return step.branches if step.__class__.__name__ == 'Fork' else [step]
+
+
+def _hops(workload):
+    return [h for step in workload.steps for h in _ends(step)]
+
+
+def check_scenarios(model, connectors):
+    hops = {(a, b) for k in connectors for link in k.links for a, b in zip(link.path, link.path[1:])}
+    for s in model.scenarios:
+        for w in s.workloads:
+            # C12 [L5 C6, F]. Every hop of a workload follows a connector of the model, in either
+            # direction: the stimulus travels only along the declared structure. [F] With a fork,
+            # every pair (previous step, branch) and (branch, next step).
+            for prev, nxt in zip(w.steps, w.steps[1:]):
+                for a in (h.ref for h in _ends(prev)):
+                    for b in (h.ref for h in _ends(nxt)):
+                        if (a, b) not in hops and (b, a) not in hops:
+                            _error(f'{s.name}: {w.name} goes from {a.name} to {b.name} '
+                                   f'without a connector', w)
+            # C5 [F, Delivery 4]. In a path, `Q reads S` only on a queue with its read
+            # dependency (as in an analysis), and a queue at most once: its jobs would otherwise
+            # wait twice in the same FIFO and the hops could not tell its two visits apart.
+            seen = set()
+            for h in _hops(w):
+                if h.store:
+                    _check_read(model, f'{s.name}: {w.name}', h.ref, h.store, w)
+                if _is_queue(h.ref):
+                    if h.ref.name in seen:
+                        _error(f'{s.name}: {w.name} goes through the queue {h.ref.name} more '
+                               f'than once', w)
+                    seen.add(h.ref.name)
+
+        # C13 [L5 C7]. A component that fails in a scenario has a capacity.
+        for f in s.faults:
+            if not f.target.capacity:
+                _error(f'{s.name}: fault on {f.target.name}, which has no capacity', f)
+
+        # C5 [F, Delivery 4]. vary hit varies the hit fraction of a read dependency (values in
+        # [0, 1]); a connector has no other parameter to vary.
+        v = s.vary
+        if v:
+            is_connector = v.target.__class__.__name__ == 'Connector'
+            if v.hit and not (is_connector and v.target.capacity):
+                _error(f'{s.name}: vary hit on {v.target.name}, which is not a connector '
+                       f'with capacity', v)
+            if is_connector and not v.hit:
+                _error(f'{s.name}: vary on the connector {v.target.name} needs hit', v)
+            if v.hit and any(not 0 <= x <= 1 for x in v.values):
+                _error(f'{s.name}: vary hit on {v.target.name} with values outside [0, 1]', v)
+
+        # C14 [D4]. A quality scenario has its six parts: if it declares one of source,
+        # stimulus, artifact, environment and response, it declares all of them, and its
+        # response measure is verified in one of three ways: simulated (workloads, measures
+        # and run), verified by an analysis of the model, or declared not verifiable with the
+        # concept that is missing. [F] run is tested by replications (auto_init_attributes).
+        declared = [p for p in SIX_PARTS if getattr(s, p)]
+        if declared:
+            missing = [p for p in SIX_PARTS if not getattr(s, p)]
+            if missing:
+                _error(f'{s.name}: quality scenario without {", ".join(missing)}', s)
+        simulated = bool(s.workloads)
+        if simulated and (not s.measures or not s.replications):
+            _error(f'{s.name}: a simulated scenario needs at least one measure and its run', s)
+        if s.measures and not simulated:
+            _error(f'{s.name}: a measure needs a workload to measure', s)
+        if declared and not (simulated or s.checks or s.missing):
+            _error(f'{s.name}: the response measure is neither simulated, verified by an '
+                   f'analysis, nor declared not verifiable', s)
+        if s.missing and (simulated or s.checks):
+            _error(f'{s.name}: declared not verifiable, but it is also verified', s)
+        for m in s.measures:
+            if m.workload and m.workload not in s.workloads:
+                _error(f'{s.name}: measure on {m.workload.name}, a workload of another scenario', m)
+
+        # C5 [F, Delivery 4]. drain measures how long the jobs that a store held take to leave
+        # their path after the fault: it needs a fault and a store in the path of its workload
+        # (without a workload, in the path of some workload of the scenario).
+        for m in s.measures:
+            if m.metric != 'drain':
+                continue
+            if not s.faults:
+                _error(f'{s.name}: drain needs a fault in the scenario', m)
+            measured = [m.workload] if m.workload else s.workloads
+            if not any(h.ref.store for w in measured for h in _hops(w)):
+                names = ', '.join(w.name for w in measured)
+                _error(f'{s.name}: drain on {names}, whose path has no store', m)
+
+    # C15 [D4]. A tactic is linked to what it changes and to a scenario whose measure is
+    # verified, so its effect is verified, not assumed (Laboratory 5, section 6).
+    for t in model.tactics:
+        if not (t.introduces or t.changes):
+            _error(f'{t.name}: tactic that introduces or changes no element', t)
+        for s in t.scenarios:
+            if s.missing or not (s.workloads or s.checks):
+                _error(f'{t.name}: motivated by {s.name}, whose measure is not verified', t)
 
 
 def create_metamodel():

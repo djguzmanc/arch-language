@@ -1,12 +1,46 @@
 """Writes the ill-formed models of invalid/ from models/rail-e1.arch, one change each.
 
+A change is a replacement (old, new) of a text that appears once in rail-e1.arch, or a block
+inserted with SCENARIO or TACTIC (Delivery 4): a scenario goes before the first tactic of the
+model (or at its end) and a tactic at the end, as the grammar orders them. The scenarios and
+tactics of these cases are written here, with names X..., so they do not depend on the scenarios
+that rail-e1.arch declares.
+
 Run it from team-F/ whenever rail-e1.arch changes, then regenerate the expected messages:
     python tools/make_invalid.py
     for f in invalid/*.arch; do python generation.py $f; done > invalid/expected-rejections.txt
 """
 import os
+import re
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+SCENARIO, TACTIC = 'SCENARIO', 'TACTIC'
+
+# A valid read through a dependency with capacity (C5): reservas-ms reads reservas-db at 40/s.
+READ = ('connector F_K22x nature dependency coupling blocking\n'
+        '  carries "Lectura de la capacidad ya calculada"\n'
+        '  capacity 40{hit}\n'
+        '  : RSV -> RSVDB\n'
+        'connector F_K22z nature data_flow coupling blocking\n'
+        '  carries "Capacidad calculada (respuesta)"\n'
+        '  : RSVDB -> RSV\n\n')
+GLOBAL = '// Global connectors of the Rail Gateway (as in sos.arch)\n'
+
+# A simulated scenario around the capacity request of F-QS7 (Delivery 4); {path}, {extra} and
+# {measure} change per case.
+SIMULATED = ('scenario {name} "{label}"\n'
+             '  workload {name}Jobs rate 8 : {path}\n'
+             '{extra}'
+             '  measure {measure}\n'
+             '  run 600 warmup 60 replications 2\n')
+REQUEST = 'LGW -> TRAD -> RSV -> TRAD -> LGW'
+
+
+def simulated(name, label, comment, path=REQUEST, extra='', measure=None):
+    return (SCENARIO, f'// Ill-formed ({label}): {comment}\n' + SIMULATED.format(
+        name=name, label=label, path=path, extra=extra,
+        measure=measure or f'p99_latency {name}Jobs <= 800 ms'))
 
 CASES = {
     # C6: a second source of control commands over the interlocking.
@@ -119,7 +153,88 @@ CASES = {
         '  // Ill-formed (C5): misses is a whole number of periods, at least 1\n'
         '  period 400 misses 0\n'
         '  : CON -> ILK'),
+
+    # ---- Delivery 4 ----
+    # C12: a branch of the fork goes on to a component it has no connector with.
+    'c12-hop.arch': simulated(
+        'X12', 'C12', 'reservas-ms answers the gateway directly, not through the translator',
+        path='LGW -> TRAD -> [RSV | TRN | POS] -> LGW'),
+    # C13: the translator fails, but it has no capacity (it is a fixed stage).
+    'c13-fault.arch': simulated(
+        'X13', 'C13', 'a fault on the translator, which has no capacity',
+        extra='  fault TRAD down at 60 for 60\n', measure='lost X13Jobs <= 0 events'),
+    # C14: a quality scenario without its environment.
+    'c14-parts.arch': (SCENARIO,
+        '// Ill-formed (C14): the quality scenario has no environment\n'
+        'scenario X14 "F-QS7"\n'
+        '  source "Puertos y Carretera" stimulus "8 solicitudes de capacidad/s durante 30 min"\n'
+        '  artifact LGW, TRAD, RSV, TRN, POS\n'
+        '  response "Cada solicitud recibe capacidad o rechazo explícito"\n'
+        '  verified_by FQS7CapacityRequest\n'),
+    # C14: a simulated scenario without its run (auto_init: tested by replications).
+    'c14-run.arch': (SCENARIO,
+        '// Ill-formed (C14): a workload and a measure, but no run\n'
+        'scenario X14R "F-QS7"\n'
+        f'  workload X14RJobs rate 8 : {REQUEST}\n'
+        '  measure p99_latency X14RJobs <= 800 ms\n'),
+    # C15: a tactic motivated by a scenario declared not verifiable.
+    'c15-tactic.arch': [
+        (SCENARIO,
+         'scenario X15 "F-QS6" attribute "evolucionabilidad"\n'
+         '  source "Equipo dueño del modelo canónico" stimulus "Versión 2 del modelo canónico"\n'
+         '  artifact TRAD environment "Operación normal"\n'
+         '  response "Solo cambia el traductor"\n'
+         '  not_verifiable "Versiones de interfaz por conector y comparación de dos modelos"\n'),
+        (TACTIC,
+         '// Ill-formed (C15): the tactic is motivated by a scenario whose measure is not verified\n'
+         'tactic X15T "Capa anticorrupción" for X15 changes TRAD\n'),
+    ],
+    # C5 [F]: hit on a dependency without capacity.
+    'c5-hit-capacity.arch': (
+        '  carries "Lecturas y escrituras de los datos de cada servicio"\n'
+        '  : TRN -> TRNDB',
+        '  carries "Lecturas y escrituras de los datos de cada servicio"\n'
+        '  // Ill-formed (C5): F-K22 declares no read rate, so no fraction is served at it\n'
+        '  hit 0.9\n'
+        '  : TRN -> TRNDB'),
+    # C5 [F]: hit 0 (no read served by the dependency) is not a fraction in (0, 1].
+    'c5-hit-range.arch': (GLOBAL,
+        '// Ill-formed (C5): hit is a fraction in (0, 1]; 0 would declare a dependency never read\n'
+        + READ.format(hit=' hit 0') + GLOBAL),
+    # C5 [F]: vary hit on a dependency without capacity.
+    'c5-vary-hit.arch': simulated(
+        'X5V', 'C5', 'vary hit on F-K22, which declares no read rate',
+        extra='  vary hit F_K22 : 1, 0.5\n'),
+    # C5 [F]: in a workload, a read by a component that is not a queue.
+    'c5-reads-queue.arch': simulated(
+        'X5R', 'C5', 'trenes-ms reads trenes-db, but it is not a queue',
+        path='LGW -> TRAD -> [RSV | TRN reads TRNDB | POS] -> TRAD -> LGW'),
+    # C5 [F]: a queue twice in the same path.
+    'c5-queue-twice.arch': simulated(
+        'X5Q', 'C5', 'the request goes through reservas-ms twice',
+        path='LGW -> TRAD -> RSV -> TRAD -> RSV -> TRAD -> LGW'),
+    # C5 [F]: drain on a workload with no store in its path.
+    'c5-drain-store.arch': simulated(
+        'X5D', 'C5', 'drain, but no store holds the requests while reservas-ms is down',
+        extra='  fault RSV down at 60 for 60\n', measure='drain X5DJobs <= 300 s'),
+    # C5 [F]: drain without a fault to drain after.
+    'c5-drain-fault.arch': [
+        ('component LGW "Rail Gateway" in RLS tier T2 kind software\n',
+         'component LGW "Rail Gateway" in RLS tier T2 kind software store\n'),
+        simulated('X5F', 'C5', 'drain, but nothing fails',
+                  measure='drain X5FJobs <= 300 s'),
+    ],
 }
+
+
+def insert(text, kind, block):
+    """Inserts a scenario before the first tactic (or at the end) and a tactic at the end."""
+    if not text.endswith('\n'):
+        text += '\n'
+    first = re.search(r'^tactic\b', text, re.M) if kind == SCENARIO else None
+    at = first.start() if first else len(text)
+    return text[:at] + '\n' + block + text[at:]
+
 
 if __name__ == '__main__':
     base = open(os.path.join(HERE, 'models', 'rail-e1.arch'), encoding='utf-8').read()
@@ -127,6 +242,9 @@ if __name__ == '__main__':
         # A case is one change (old, new) or a list of them.
         text = base
         for old, new in changes if isinstance(changes, list) else [changes]:
+            if old in (SCENARIO, TACTIC):
+                text = insert(text, old, new)
+                continue
             assert base.count(old) == 1, f'{name}: the text to replace is not unique in rail-e1.arch'
             text = text.replace(old, new)
         with open(os.path.join(HERE, 'invalid', name), 'w', encoding='utf-8') as f:

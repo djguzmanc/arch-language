@@ -1,11 +1,19 @@
 // Metamodel (M2) of the architecture description language for the SoS.
 // Starting point: language of Laboratory 4. Adaptations of team F (Rail) are marked [F].
 // Every adaptation is optional, so models written in the base language (sos.arch) still conform.
+// Delivery 4: the elements of Laboratory 5 for verification (store, and scenarios with workloads,
+// faults, varied parameters and measures) are marked [L5]; scenarios with their six parts and
+// tactics as elements, taken from the common language of Delivery 4 (team D), are marked [D4];
+// the extensions of team F for verification (hit, forks and reads in a workload, vary hit, drain)
+// are marked [F]. The capacity of a component of [F] has the meaning of [L5]: the service rate
+// of a FIFO queue (exponential in the simulation).
 Model:
   'system' name=ID
   constituents+=Constituent
   elements+=Element
   analyses*=Analysis
+  scenarios*=Scenario                       // [L5, D4]
+  tactics*=Tactic                           // [D4]
 ;
 
 Constituent:
@@ -26,6 +34,8 @@ Component:
   ('latency' latency=NUMBER)?               // budget in ms; in a percentile analysis, a p99.9 budget (A9)
   ('capacity' capacity=NUMBER)?             // [F] requests or events per second it can serve (queue)
   ('load' load=NUMBER)?                     // [F] requests or events per second it receives in the scenario
+  (store?='store')?                         // [L5] holds the jobs while the next component is down;
+                                            //     [D4] a store that is down holds what it receives
 ;
 
 Connector:
@@ -43,6 +53,9 @@ Connector:
                                             //     silence only after misses periods (detection)
   ('misses' misses=Misses)?                 // [F, as C] missed periods before the receiver detects the
                                             //     silence; needs period, and is required in detection
+  (hit_set?='hit' hit=NUMBER)?              // [F] only with capacity: fraction in (0, 1] of the reads
+                                            //     served at the capacity of this dependency (cache hits);
+                                            //     the rest at the capacity of the source. Not written: 1
   ':' links+=Link[',']
 ;
 
@@ -77,6 +90,68 @@ Single:
 // [F, as C] In detection too.
 Group:
   '[' alternatives+=Single['|'] ']' ('beta' beta=NUMBER)?
+;
+
+// [L5] A scenario for simulation, extended in [D4] with the six parts of a quality scenario
+// (as in the common language). The artifact refers to elements of the model. A scenario that the
+// model cannot simulate keeps its six parts and is either verified by an analysis of the model
+// or declared not verifiable, with the concept or technique that is missing (C14).
+Scenario:
+  'scenario' name=ID label=STRING
+  ('attribute' attribute=STRING)?                                 // [D4]
+  ('source' source=STRING)?                                       // [D4]
+  ('stimulus' stimulus=STRING)?                                   // [D4]
+  ('artifact' artifact+=[Element][','])?                          // [D4]
+  ('environment' environment=STRING)?                             // [D4]
+  ('response' response=STRING)?                                   // [D4]
+  ('verified_by' checks+=[Analysis][','])?                        // [D4] analyses of the model
+  ('not_verifiable' missing=STRING)?                              // [D4] what the language lacks
+  workloads*=Workload                                             // [L5]
+  faults*=Fault                                                   // [L5]
+  vary=Vary?                                                      // [L5]
+  measures*=Measure                                               // [L5]
+  ('run' duration=NUMBER 'warmup' warmup=NUMBER 'replications' replications=INT)?   // [L5]
+;
+
+// [L5] Poisson arrivals that follow the path (C12). [D4] 'compact n': while a store holds the
+// jobs of this workload, only the last n are kept (as in the common language).
+// [F] A step may be a fork of single hops that run in parallel (the job continues when the
+// slowest branch ends), and a queue may read a store (Q reads S) through its blocking dependency
+// with capacity, at the hit fraction of that dependency (C5). A component with latency and no
+// capacity adds its latency once per job; the latency of a connector, once per connector and job.
+Workload:
+  'workload' name=ID 'rate' rate=NUMBER ('compact' compact=INT)? ':' steps+=Step['->']
+;
+Step: Fork | Hop;
+Fork: '[' branches+=Hop['|'] ']';
+Hop: ref=[Component] ('reads' store=[Component])?;
+
+// [L5] Interval in which the component serves nothing; its jobs are lost unless a store holds
+// them (C13: only a component with capacity fails).
+Fault: 'fault' target=[Component] 'down' 'at' start=NUMBER 'for' length=NUMBER;
+
+// [L5] A varied parameter: the rate of a workload or the capacity of a component.
+// [F] 'vary hit K' varies the hit fraction of the read connector K (values in [0, 1]).
+Vary: 'vary' (hit?=/hit\b/)? target=[Varied] ':' values+=NUMBER[','];
+Varied: Workload | Component | Connector;
+
+// [L5] Response measure: p99_latency, lost and recovery as in Laboratory 5 (recovery as in [D4]).
+// [F] 'drain': from the end of the fault until the last job that a store held leaves its path
+// (C5: a store in the path of its workload). Unlike recovery, it does not wait for the first
+// arrival after the fault, which with a low rate would add about 1/rate.
+Measure:
+  'measure' metric=MeasureMetric (workload=[Workload])? '<=' threshold=NUMBER unit=Unit
+;
+MeasureMetric: 'p99_latency' | 'lost' | 'recovery' | 'drain';
+Unit: 'ms' | 's' | 'events';
+
+// [D4] A tactic or pattern, linked to the scenarios that motivate it and to the elements it
+// introduces or changes (C15).
+Tactic:
+  'tactic' name=ID label=STRING
+  'for' scenarios+=[Scenario][',']
+  ('introduces' introduces+=[Element][','])?
+  ('changes' changes+=[Element][','])?
 ;
 
 Tier: 'T1' | 'T2' | 'T3' | 'T4' | 'T5';

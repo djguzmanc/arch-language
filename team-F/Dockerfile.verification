@@ -1,0 +1,8 @@
+# Verification (Laboratory 5, section 4.5; Delivery 4): graph, structural properties,
+# simulation and report per model. The other programs run with --entrypoint python
+# (correspondence.py, sos_compose.py, tactics_check.py); see README.md.
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements-verification.txt .
+RUN pip install --no-cache-dir -r requirements-verification.txt
+ENTRYPOINT ["python", "verification.py"]

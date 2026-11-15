@@ -1,11 +1,23 @@
+invalid/c12-hop.arch: REJECTED: X12: X12Jobs goes from RSV to LGW without a connector
+invalid/c13-fault.arch: REJECTED: X13: fault on TRAD, which has no capacity
+invalid/c14-parts.arch: REJECTED: X14: quality scenario without environment
+invalid/c14-run.arch: REJECTED: X14R: a simulated scenario needs at least one measure and its run
+invalid/c15-tactic.arch: REJECTED: X15T: motivated by X15, whose measure is not verified
 invalid/c5-detection.arch: REJECTED: FQS2SilentConcentrator: F_K11 needs period and misses (or a budget)
+invalid/c5-drain-fault.arch: REJECTED: X5F: drain needs a fault in the scenario
+invalid/c5-drain-store.arch: REJECTED: X5D: drain on X5DJobs, whose path has no store
+invalid/c5-hit-capacity.arch: REJECTED: F_K22: hit applies only to a connector with capacity
+invalid/c5-hit-range.arch: REJECTED: F_K22x: hit 0 is not in (0, 1]
 invalid/c5-misses-zero.arch: REJECTED: Expected Misses
 invalid/c5-misses.arch: REJECTED: F_K11: misses needs a period
 invalid/c5-percentile.arch: REJECTED: FQS3CustodyLatency: 2 fixed stages leave no exceedance for p99.9
 invalid/c5-queue-load.arch: REJECTED: RSV: a queue needs a load below its capacity and no fixed latency
+invalid/c5-queue-twice.arch: REJECTED: X5Q: X5QJobs goes through the queue RSV more than once
 invalid/c5-read-response.arch: REJECTED: FQS7CapacityRequest: RSV reads RSVDB with no data flow RSVDB -> RSV for the reply
 invalid/c5-read-several.arch: REJECTED: FQS7CapacityRequest: RSV reads RSVDB: several dependencies with capacity ['F_K22x', 'F_K22y']
 invalid/c5-read.arch: REJECTED: FQS7CapacityRequest: RSV reads RSVDB through no blocking dependency that declares capacity
+invalid/c5-reads-queue.arch: REJECTED: X5R: X5RJobs: TRN reads TRNDB: TRN is not a queue
+invalid/c5-vary-hit.arch: REJECTED: X5V: vary hit on F_K22, which is not a connector with capacity
 invalid/c6-cycle.arch: REJECTED: F_K5: control commands form a cycle ILK -> PLN -> ILK
 invalid/c6-hierarchy.arch: REJECTED: ILK receives control commands from several sources ['CCF', 'PLN'] through ['F_K1x', 'F_K5']
 invalid/c7-acl.arch: REJECTED: F_K25a: CRG reaches the gateway LGW without the translator
