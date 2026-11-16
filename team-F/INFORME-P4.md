@@ -719,6 +719,7 @@ natural (`hit`, q). Las propiedades de seguridad lógica (F-QS2, F-QS4) quedaron
 | SoS-QS1 depende de los otros dueños | P11 | Holgura de 165,7 s; RGW hasta 365,7 s, NCG hasta 350 s. Con el NCS sin rediseño (ncs-e2) M4 se viola |
 | Medidas no verificables | Sección 5.2 | «0 falsos aceptados», «0 rutas sobre estado viejo», «0 sin respuesta» y «0 trenes cancelados» quedan sin evidencia del modelo |
 | Cola de telemetría en F-QS3 | — | 30.600 eventos y ~160 s de drenaje, calculados a mano en la Entrega 2; no simulados |
+| `sos.arch` cubre solo M4 de SoS-QS1 | P11 | Observación del profesor a la Entrega 3: `SoSQS1M4` colapsa los cuatro consumidores en CGW (sin presupuestos para PGW, LGW, FGW ni SoS-K33 a SoS-K35) y deja fuera M3 (≤ 60 s) y P6 (≤ 240 s). Los seis equipos acordaron mantener el `sos.arch` de `main` sin cambios para esta entrega, porque cambiarlo exige acuerdo de todos. Por eso M3 y P6 se verifican en esta entrega solo en los tramos que cada equipo modela (para el férreo, P5: detección de datos viejos 180 s ≤ 240 s), y la verificación top-down de M4 toma el máximo de los consumidores desde la tabla bottom-up, no desde `sos.arch` |
 
 ## 10. Conclusiones
 
